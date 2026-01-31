@@ -23,9 +23,19 @@ from .board_loader import (
     BoardPool,
 )
 
-# Will be added as we port more modules
-# from .simulation import simulate_round
-# from .validation import validate_board, validate_board_or_throw
+# Validation
+from .validation import (
+    validate_board,
+    validate_board_or_throw,
+    is_board_playable,
+    ValidationResult,
+)
+
+# Simulation
+from .simulation import (
+    simulate_round,
+    simulate_multiple_rounds,
+)
 
 __all__ = [
     "__version__",
@@ -40,8 +50,12 @@ __all__ = [
     "load_boards_from_json",
     "load_board_by_index",
     "BoardPool",
-    # Coming soon
-    # "simulate_round",
-    # "validate_board",
-    # "validate_board_or_throw",
+    # Validation
+    "validate_board",
+    "validate_board_or_throw",
+    "is_board_playable",
+    "ValidationResult",
+    # Simulation
+    "simulate_round",
+    "simulate_multiple_rounds",
 ]
