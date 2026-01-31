@@ -1,0 +1,855 @@
+{
+  "name": "Generated Boards (Size 2)",
+  "description": "All possible legal opponent boards for size 2",
+  "createdAt": "2026-01-31T16:20:15.461Z",
+  "boards": [
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "piece",
+          "empty"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 3
+        }
+      ],
+      "index": 0,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "piece",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 4
+        }
+      ],
+      "index": 1,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "trap",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 5
+        }
+      ],
+      "index": 2,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "piece",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 5
+        }
+      ],
+      "index": 3,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "piece",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 4
+        }
+      ],
+      "index": 4,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "trap",
+          "empty"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 4
+        }
+      ],
+      "index": 5,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "trap",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 5
+        }
+      ],
+      "index": 6,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "trap",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 5
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 6
+        }
+      ],
+      "index": 7,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "empty",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 3
+        }
+      ],
+      "index": 8,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "piece",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 4
+        }
+      ],
+      "index": 9,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "piece",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 5
+        }
+      ],
+      "index": 10,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "trap",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 5
+        }
+      ],
+      "index": 11,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "trap",
+          "piece"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 4
+        }
+      ],
+      "index": 12,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "empty",
+          "piece"
+        ],
+        [
+          "empty",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 1
+          },
+          "type": "final",
+          "order": 4
+        }
+      ],
+      "index": 13,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "piece",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 5
+        }
+      ],
+      "index": 14,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    },
+    {
+      "boardSize": 2,
+      "grid": [
+        [
+          "piece",
+          "empty"
+        ],
+        [
+          "trap",
+          "trap"
+        ]
+      ],
+      "sequence": [
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "piece",
+          "order": 1
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 1
+          },
+          "type": "trap",
+          "order": 2
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 3
+        },
+        {
+          "position": {
+            "row": 1,
+            "col": 0
+          },
+          "type": "trap",
+          "order": 4
+        },
+        {
+          "position": {
+            "row": 0,
+            "col": 0
+          },
+          "type": "piece",
+          "order": 5
+        },
+        {
+          "position": {
+            "row": -1,
+            "col": 0
+          },
+          "type": "final",
+          "order": 6
+        }
+      ],
+      "index": 15,
+      "createdAt": "2026-01-31T16:20:15.461Z"
+    }
+  ]
+}
