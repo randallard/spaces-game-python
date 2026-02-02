@@ -31,42 +31,67 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
+### Command Line Interface
+
+The package includes a CLI for common operations:
+
+```bash
+# Verify parity with TypeScript (52 test cases)
+spaces-game test-parity
+
+# Validate board files
+spaces-game validate data/boards_size_3.json
+
+# Play a game
+spaces-game play data/boards_size_3.json --seed 42
+
+# Show board pool statistics
+spaces-game stats data/boards_size_3.json
+
+# Generate boards (wraps TypeScript CLI)
+spaces-game generate-boards --size 3 --limit 1000 --output my_boards.json
+```
+
+See [CLI.md](CLI.md) for complete CLI documentation.
+
 ### Basic Simulation
 
 ```python
-from spaces_game import simulate_round, load_boards
+from spaces_game import simulate_round, load_board_by_index
 
 # Load pre-generated boards
-player_board = load_boards('my-boards.json', index=0)
-opponent_board = load_boards('data/boards_size_3.json', index=42)
+player_board = load_board_by_index('data/boards_size_3.json', 0)
+opponent_board = load_board_by_index('data/boards_size_3.json', 42)
 
 # Run simulation
 result = simulate_round(1, player_board, opponent_board)
 
 print(f"Winner: {result.winner}")
-print(f"Player: {result.player_points} points")
-print(f"Opponent: {result.opponent_points} points")
+print(f"Player: {result.playerPoints} points")
+print(f"Opponent: {result.opponentPoints} points")
 ```
 
 ### Gymnasium Environment
 
 ```python
-import gymnasium as gym
-from spaces_game.gym_env import SpacesGameEnv
+from spaces_game import SpacesGameEnv
 
 # Create environment
-env = SpacesGameEnv(board_size=3, opponent_pool='data/boards_size_3.json')
+env = SpacesGameEnv(
+    board_pool_path='data/boards_size_3.json',
+    deck_size=10,
+    opponent_strategy='random'
+)
 
 # Training loop
-obs, info = env.reset()
-for _ in range(5):  # 5 rounds
+obs, info = env.reset(seed=42)
+terminated = False
+
+while not terminated:
     action = env.action_space.sample()  # Your agent here
     obs, reward, terminated, truncated, info = env.step(action)
 
-    if terminated:
-        break
-
-print(f"Final score: {info['score']}")
+print(f"Final score: {info['agent_total_score']} - {info['opponent_total_score']}")
 ```
 
 ## Project Structure
