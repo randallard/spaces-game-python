@@ -14,6 +14,64 @@ This creates the `spaces-game` command.
 
 ## Commands
 
+### `test` - Run Single Simulation Test
+
+Run a single simulation test with detailed output, similar to TypeScript CLI.
+
+```bash
+# Test with specific board indices
+spaces-game test data/boards_size_3.json --player-index 0 --opponent-index 1
+
+# Defaults to indices 0 and 1
+spaces-game test data/boards_size_3.json
+```
+
+**Output:**
+```
+Running simulation...
+
+🎮 Simulation Results
+
+Player                 Opponent
+
+┌─────┬─────┬─────┐    ┌─────┬─────┬─────┐
+│ 3●  │     │     │    │     │     │ 1●  │
+├─────┼─────┼─────┤    ├─────┼─────┼─────┤
+│ 2●  │     │     │    │     │ 3●  │ 2●  │
+├─────┼─────┼─────┤    ├─────┼─────┼─────┤
+│ 1●  │     │     │    │     │ 4●  │     │
+└─────┴─────┴─────┘    └─────┴─────┴─────┘
+
+📋 Technical Explanation
+
+Player starts with piece at (2, 0)
+Opponent starts with piece at (0, 2)
+
+Player moves to (2, 0)
+Opponent moves to (0, 2)
+Player moves to (1, 0)
+  Player +1 point (forward movement)
+Opponent moves to (1, 2)
+  Opponent +1 point (forward movement)
+Player moves to (0, 0)
+  Player +1 point (forward movement)
+Opponent moves to (1, 1)
+Player reaches the goal!
+  Player +1 point (goal reached)
+
+Round ends - Player reached the goal!
+
+🏆 PLAYER WINS
+
+Scores:
+  Player:   3 points
+  Opponent: 2 points
+
+Final Positions:
+  Player:   row -1, col 0
+  Opponent: row 2, col 1
+```
+
 ### `test-parity` - Run Parity Tests
 
 Verifies that Python simulation produces identical results to TypeScript for all 52 test cases.
@@ -90,6 +148,9 @@ spaces-game play data/boards_size_3.json --rounds 5
 
 # Play with seed for reproducibility
 spaces-game play data/boards_size_3.json --rounds 5 --seed 42
+
+# Play with detailed output for each round
+spaces-game play data/boards_size_3.json --rounds 5 --seed 42 --verbose
 ```
 
 **Output:**
