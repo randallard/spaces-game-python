@@ -55,5 +55,7 @@ dmypy.json
 .DS_Store
 Thumbs.db
 
-# Data files (optional - comment out if you want to commit generated boards)
-# data/*.json
+# Large board pool files (>50MB, generate locally)
+data/boards_size_4_large.json
+data/boards_size_5.json
+data/*_large.json
