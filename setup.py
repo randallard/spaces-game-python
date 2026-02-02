@@ -27,6 +27,7 @@ setup(
         "numpy>=1.24.0",
         "typing-extensions>=4.5.0",
         "gymnasium>=0.29.0",
+        "click>=8.1.0",
     ],
     extras_require={
         "dev": [
@@ -41,4 +42,9 @@ setup(
         "spaces_game": ["py.typed"],
     },
     include_package_data=True,
+    entry_points={
+        "console_scripts": [
+            "spaces-game=spaces_game.cli:cli",
+        ],
+    },
 )
