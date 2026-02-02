@@ -37,6 +37,9 @@ from .simulation import (
     simulate_multiple_rounds,
 )
 
+# Gymnasium Environment
+from .gym_env import SpacesGameEnv
+
 __all__ = [
     "__version__",
     # Types
@@ -58,4 +61,6 @@ __all__ = [
     # Simulation
     "simulate_round",
     "simulate_multiple_rounds",
+    # Gymnasium
+    "SpacesGameEnv",
 ]
