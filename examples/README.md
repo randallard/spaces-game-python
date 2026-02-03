@@ -208,6 +208,153 @@ for _ in range(5):
 env.close()
 ```
 
+### 3. Training Scripts (`train_basic.py`)
+
+Train RL agents using Stable Baselines3 PPO algorithm.
+
+**Usage:**
+```bash
+# Basic training (size 2 boards, 100K timesteps)
+python examples/train_basic.py \
+    --timesteps 100000 \
+    --n-envs 4
+
+# Train with perfect information (agent sees opponent's deck)
+python examples/train_basic.py \
+    --perfect-info \
+    --timesteps 500000 \
+    --n-envs 4
+
+# Train on size 3 boards vs greedy opponent
+python examples/train_basic.py \
+    --board-pool data/boards_size_3_large.json \
+    --opponent greedy \
+    --timesteps 1000000 \
+    --n-envs 4
+
+# Resume training from checkpoint
+python examples/train_basic.py \
+    --load-model models/ppo_spacegame_50000_steps.zip \
+    --timesteps 500000
+```
+
+**Key Options:**
+- `--board-pool PATH`: Board pool to use (default: `data/boards_size_2.json`)
+- `--opponent STRATEGY`: Opponent strategy - `random` or `greedy` (default: `random`)
+- `--perfect-info`: Enable perfect information mode (agent sees opponent's full deck)
+- `--timesteps N`: Total training timesteps (default: 100000)
+- `--n-envs N`: Number of parallel environments (default: 4)
+- `--save-freq N`: Save checkpoint every N steps (default: 10000)
+- `--eval-freq N`: Evaluate every N steps (default: 5000)
+- `--load-model PATH`: Continue training from saved model
+
+**Training Modes:**
+- **Partial Observability** (default): Agent only sees opponent's board selection indices
+- **Perfect Information** (`--perfect-info`): Agent sees opponent's full deck encoded as tensors
+
+### 4. Evaluation Scripts (`evaluate_agent.py`)
+
+Evaluate trained agents against baselines.
+
+**Usage:**
+```bash
+# Evaluate against greedy opponent
+python examples/evaluate_agent.py \
+    models/ppo_spacegame_final.zip \
+    --board-pool data/boards_size_2.json \
+    --opponent greedy \
+    --episodes 1000 \
+    --baseline
+
+# Evaluate perfect info model (must match training mode)
+python examples/evaluate_agent.py \
+    models/ppo_spacegame_final.zip \
+    --perfect-info \
+    --opponent greedy \
+    --episodes 1000 \
+    --baseline
+```
+
+**Options:**
+- `model_path`: Path to trained model (required)
+- `--board-pool PATH`: Board pool to use (default: `data/boards_size_2.json`)
+- `--opponent STRATEGY`: Opponent to evaluate against (default: `random`)
+- `--episodes N`: Number of evaluation episodes (default: 1000)
+- `--baseline`: Also test random baseline for comparison
+- `--perfect-info`: Use perfect information mode (must match training)
+
+**Output:**
+```
+======================================================================
+TRAINED AGENT RESULTS
+======================================================================
+Episodes:           1,000
+Wins:               742 (74.2%)
+Losses:             201 (20.1%)
+Ties:               57 (5.7%)
+
+Avg Agent Score:    4.23
+Avg Opponent Score: 3.12
+Avg Score Diff:     1.11 ± 2.34
+======================================================================
+```
+
+### 5. Board Selection Testing (`test_board_selection.py`)
+
+Validate that agent can make optimal board selections given perfect information.
+
+**Usage:**
+```bash
+# Test agent's selection accuracy on controlled boards
+python examples/test_board_selection.py \
+    models/ppo_spacegame_final.zip \
+    --board-pool new_boards_2.json \
+    --perfect-info
+```
+
+**What it tests:**
+- For each opponent board, finds the objectively optimal counter-board
+- Compares agent's selection to optimal
+- Reports accuracy (% of optimal selections)
+
+**Success criteria:** ≥80% optimal selection rate
+
+**Example output:**
+```
+--- Test 1/8 ---
+Opponent plays Board 0
+  Optimal selection: Board 5 (diff: +2)
+  Agent selected:    Board 5 (diff: +2)
+  ✓ CORRECT!
+
+--- Test 2/8 ---
+Opponent plays Board 1
+  Optimal selection: Board 4 (diff: +2)
+  Agent selected:    Board 6 (diff: +1)
+  ✗ SUBOPTIMAL (missed 1 points)
+```
+
+### 6. Observation Inspector (`inspect_observation.py`)
+
+Debug tool to visualize what the agent observes.
+
+**Usage:**
+```bash
+# See all observation modes and encodings
+python examples/inspect_observation.py
+```
+
+**Shows:**
+- Partial vs perfect information comparison
+- How opponent decks are encoded as tensors
+- Observation evolution during gameplay
+- Decoding of encoded boards into human-readable format
+
+**Use this to:**
+- Understand what data the neural network receives
+- Debug perfect information encoding
+- Verify observation space is correct
+
 ## Next Steps: RL Training
 
 The environment is ready for use with any RL library that supports Gymnasium:
