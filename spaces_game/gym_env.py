@@ -76,8 +76,8 @@ class SpacesGameEnv(gym.Env):
 
         # Observation space: dict with multiple components
         self.observation_space = spaces.Dict({
-            # Current round (1-5)
-            "round": spaces.Discrete(5, start=1),
+            # Current round (0-4, representing rounds 1-5)
+            "round": spaces.Discrete(5),
 
             # Score differential (agent - opponent), bounded by max possible score
             "score_diff": spaces.Box(low=-500, high=500, shape=(1,), dtype=np.float32),
@@ -237,7 +237,7 @@ class SpacesGameEnv(gym.Env):
         first_picker = 0 if self.current_round % 2 == 1 else 1
 
         return {
-            "round": self.current_round,
+            "round": self.current_round - 1,  # 0-indexed for SB3 (rounds 1-5 become 0-4)
             "score_diff": np.array([self.agent_total_score - self.opponent_total_score], dtype=np.float32),
             "agent_score": np.array([self.agent_total_score], dtype=np.float32),
             "opponent_score": np.array([self.opponent_total_score], dtype=np.float32),
