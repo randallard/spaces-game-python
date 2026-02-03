@@ -22,9 +22,11 @@ cd spaces-game-python
 python -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install -e .
+# Install dependencies including RL libraries
+pip install -e ".[rl]"
 ```
+
+**Note**: The `[rl]` extra installs Stable Baselines3 and TensorBoard for training.
 
 ### 2. Verify Installation
 

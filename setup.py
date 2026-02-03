@@ -37,6 +37,10 @@ setup(
             "mypy>=1.4.0",
             "black>=23.0.0",
         ],
+        "rl": [
+            "stable-baselines3>=2.0.0",
+            "tensorboard>=2.14.0",
+        ],
     },
     package_data={
         "spaces_game": ["py.typed"],
