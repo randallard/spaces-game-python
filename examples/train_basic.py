@@ -19,7 +19,7 @@ from stable_baselines3.common.monitor import Monitor
 from spaces_game import SpacesGameEnv
 
 
-def make_env(board_pool_path: str, opponent: str = "random", seed: int = 0):
+def make_env(board_pool_path: str, opponent: str = "random", seed: int = 0, perfect_info: bool = False):
     """
     Create a single environment instance.
 
@@ -27,6 +27,7 @@ def make_env(board_pool_path: str, opponent: str = "random", seed: int = 0):
         board_pool_path: Path to board pool JSON
         opponent: Opponent strategy ("random" or "greedy")
         seed: Random seed
+        perfect_info: Enable perfect information (agent sees opponent deck)
 
     Returns:
         Callable that creates the environment
@@ -36,6 +37,7 @@ def make_env(board_pool_path: str, opponent: str = "random", seed: int = 0):
             board_pool_path=board_pool_path,
             deck_size=10,
             opponent_strategy=opponent,
+            perfect_information=perfect_info,
         )
         env.reset(seed=seed)
         return Monitor(env)
@@ -113,6 +115,11 @@ def main():
         action="store_true",
         help="Use SubprocVecEnv instead of DummyVecEnv (more parallel but more RAM)",
     )
+    parser.add_argument(
+        "--perfect-info",
+        action="store_true",
+        help="Enable perfect information (agent can see opponent's full deck)",
+    )
 
     args = parser.parse_args()
 
@@ -128,6 +135,7 @@ def main():
     print("=" * 70)
     print(f"Board Pool:       {args.board_pool}")
     print(f"Opponent:         {args.opponent}")
+    print(f"Perfect Info:     {'YES - Agent sees opponent deck' if args.perfect_info else 'NO - Partial observability'}")
     print(f"Total Timesteps:  {args.timesteps:,}")
     print(f"Parallel Envs:    {args.n_envs}")
     print(f"Save Directory:   {args.save_dir}")
@@ -146,20 +154,20 @@ def main():
     if args.use_subprocess:
         print("  Using SubprocVecEnv (more parallel, more RAM)")
         env = SubprocVecEnv([
-            make_env(args.board_pool, args.opponent, args.seed + i)
+            make_env(args.board_pool, args.opponent, args.seed + i, args.perfect_info)
             for i in range(args.n_envs)
         ])
     else:
         print("  Using DummyVecEnv (less parallel, less RAM)")
         env = DummyVecEnv([
-            make_env(args.board_pool, args.opponent, args.seed + i)
+            make_env(args.board_pool, args.opponent, args.seed + i, args.perfect_info)
             for i in range(args.n_envs)
         ])
 
     # Create evaluation environment (single env)
     print("Creating evaluation environment...")
     eval_env = DummyVecEnv([
-        make_env(args.board_pool, args.opponent, args.seed + 1000)
+        make_env(args.board_pool, args.opponent, args.seed + 1000, args.perfect_info)
     ])
 
     # Setup callbacks

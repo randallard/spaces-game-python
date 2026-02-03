@@ -55,6 +55,7 @@ class SpacesGameEnv(gym.Env):
         deck_size: int = 10,
         opponent_strategy: str = "random",
         render_mode: Optional[str] = None,
+        perfect_information: bool = False,
     ):
         """
         Initialize Spaces Game environment.
@@ -64,18 +65,24 @@ class SpacesGameEnv(gym.Env):
             deck_size: Number of boards in each player's deck (default 10)
             opponent_strategy: Opponent strategy ("random", "greedy", or "trained")
             render_mode: Rendering mode ("human", "ansi", or None)
+            perfect_information: If True, agent can see opponent's full deck (default: False)
         """
         super().__init__()
 
         self.deck_size = deck_size
         self.opponent_strategy = opponent_strategy
         self.render_mode = render_mode
+        self.perfect_information = perfect_information
 
         # Load board pool
         self.board_pool = BoardPool(board_pool_path, cache=True)
 
+        # Sample a board to get board size for observation space
+        sample_board = self.board_pool.sample(1)[0]
+        self.board_size = sample_board.boardSize
+
         # Observation space: dict with multiple components
-        self.observation_space = spaces.Dict({
+        obs_space_dict = {
             # Current round (0-4, representing rounds 1-5)
             "round": spaces.Discrete(5),
 
@@ -92,7 +99,21 @@ class SpacesGameEnv(gym.Env):
             # Board selection history (indices into deck, -1 = not played yet)
             "agent_history": spaces.Box(low=-1, high=deck_size-1, shape=(5,), dtype=np.int32),
             "opponent_history": spaces.Box(low=-1, high=deck_size-1, shape=(5,), dtype=np.int32),
-        })
+        }
+
+        # Add perfect information components if enabled
+        if self.perfect_information:
+            # Opponent's deck encoded as grid
+            # Shape: (deck_size, board_size, board_size, 4)
+            # 4 features per cell: has_piece, piece_order, has_trap, trap_order
+            obs_space_dict["opponent_deck"] = spaces.Box(
+                low=0,
+                high=max(deck_size, 20),  # Max value could be up to sequence length
+                shape=(deck_size, self.board_size, self.board_size, 4),
+                dtype=np.float32
+            )
+
+        self.observation_space = spaces.Dict(obs_space_dict)
 
         # Action space: select one board from deck
         self.action_space = spaces.Discrete(deck_size)
@@ -227,6 +248,39 @@ class SpacesGameEnv(gym.Env):
             return None
         return None
 
+    def _encode_board_as_grid(self, board: Board) -> np.ndarray:
+        """
+        Encode a board as a grid for neural network input.
+
+        Args:
+            board: Board to encode
+
+        Returns:
+            Grid of shape (board_size, board_size, 4) with:
+            - Channel 0: has_piece (0 or 1)
+            - Channel 1: piece_order (0 if no piece, 1-N for sequence order)
+            - Channel 2: has_trap (0 or 1)
+            - Channel 3: trap_order (0 if no trap, 1-N for sequence order)
+        """
+        grid = np.zeros((board.boardSize, board.boardSize, 4), dtype=np.float32)
+
+        # Track piece and trap orders
+        for move in board.sequence:
+            row, col = move.position.row, move.position.col
+
+            # Skip goal position (row -1)
+            if row < 0:
+                continue
+
+            if move.type == 'piece':
+                grid[row, col, 0] = 1.0  # has_piece
+                grid[row, col, 1] = float(move.order)  # piece_order
+            elif move.type == 'trap':
+                grid[row, col, 2] = 1.0  # has_trap
+                grid[row, col, 3] = float(move.order)  # trap_order
+
+        return grid
+
     def _get_observation(self) -> Dict[str, Any]:
         """Build observation dict."""
         # Pad history arrays with -1 for unplayed rounds
@@ -236,7 +290,7 @@ class SpacesGameEnv(gym.Env):
         # Determine who picks first (game creator picks first in odd rounds)
         first_picker = 0 if self.current_round % 2 == 1 else 1
 
-        return {
+        obs = {
             "round": self.current_round - 1,  # 0-indexed for SB3 (rounds 1-5 become 0-4)
             "score_diff": np.array([self.agent_total_score - self.opponent_total_score], dtype=np.float32),
             "agent_score": np.array([self.agent_total_score], dtype=np.float32),
@@ -245,6 +299,20 @@ class SpacesGameEnv(gym.Env):
             "agent_history": agent_hist,
             "opponent_history": opponent_hist,
         }
+
+        # Add perfect information if enabled
+        if self.perfect_information:
+            # Encode opponent's entire deck
+            opponent_deck_encoded = np.zeros(
+                (self.deck_size, self.board_size, self.board_size, 4),
+                dtype=np.float32
+            )
+            for i, board in enumerate(self.opponent_deck):
+                opponent_deck_encoded[i] = self._encode_board_as_grid(board)
+
+            obs["opponent_deck"] = opponent_deck_encoded
+
+        return obs
 
     def _get_info(self) -> Dict[str, Any]:
         """Build info dict with additional details."""
