@@ -13,6 +13,7 @@ from .board_loader import load_boards_from_json, BoardPool
 from .simulation import simulate_round
 from .validation import is_board_playable
 from .types import Board, Position, RoundResult
+from .interactive_builder import build_board_interactive
 
 
 @click.group()
@@ -22,13 +23,112 @@ def cli():
     pass
 
 
-def _render_board(board: Board, title: str = "Board", rotate: bool = False) -> str:
+def _render_board_fog_of_war(result: RoundResult, title: str = "Opponent (Fog of War)") -> str:
+    """
+    Render opponent board with fog of war: show pieces and only traps that player hit.
+
+    Args:
+        result: Round result containing both boards and simulation details
+        title: Title to display
+
+    Returns:
+        Rendered board as string
+    """
+    board = result.opponentBoard
+    size = board.boardSize
+    lines = []
+
+    # Determine which trap the player hit (if any)
+    player_hit_trap_at: Optional[tuple[int, int]] = None
+    if result.simulationDetails.playerHitTrap:
+        # Player's final position needs to be translated to opponent's board coordinates
+        # Boards are rotated 180 degrees from each other
+        # Player (0,0) = Opponent (size-1, size-1)
+        opp_row = size - 1 - result.playerFinalPosition.row
+        opp_col = size - 1 - result.playerFinalPosition.col
+        player_hit_trap_at = (opp_row, opp_col)
+
+    # Track pieces and traps at each position
+    position_contents: dict[tuple[int, int], tuple[list[int], list[int]]] = {}
+
+    for move in board.sequence:
+        if move.position.row >= 0:  # Skip final moves
+            # Rotate coordinates for display
+            row = size - 1 - move.position.row
+            col = size - 1 - move.position.col
+            pos = (row, col)
+
+            if pos not in position_contents:
+                position_contents[pos] = ([], [])
+
+            pieces, traps = position_contents[pos]
+
+            if move.type == 'piece':
+                pieces.append(move.order)
+            elif move.type == 'trap':
+                # Only show trap if player hit it
+                orig_pos = (move.position.row, move.position.col)
+                if player_hit_trap_at and orig_pos == player_hit_trap_at:
+                    traps.append(move.order)
+                # Otherwise hide the trap (don't add it)
+
+    lines.append(f"{title}\n")
+
+    # Top border
+    lines.append("┌" + "─────────┬" * (size - 1) + "─────────┐")
+
+    for row_idx in range(size):
+        row_items = []
+        for col_idx in range(size):
+            pos = (row_idx, col_idx)
+            pieces, traps = position_contents.get(pos, ([], []))
+
+            if pieces and traps:
+                # Supermove: both piece and trap (trap was hit)
+                piece_str = click.style(f"{pieces[0]}●", fg="blue")
+                trap_str = click.style(f"{traps[0]}X", fg="red")
+                content = f"{piece_str},{trap_str}"
+                visible_len = len(str(pieces[0])) + 1 + 1 + len(str(traps[0])) + 1
+                padding = 9 - 1 - visible_len
+                cell = f" {content}{' ' * padding}"
+            elif pieces:
+                # Just piece
+                num_str = click.style(f"{pieces[0]}●", fg="blue")
+                visible_len = len(str(pieces[0])) + 1
+                padding = 9 - 2 - visible_len
+                cell = f"  {num_str}{' ' * padding}"
+            elif traps:
+                # Just trap (player hit it)
+                num_str = click.style(f"{traps[0]}X", fg="red")
+                visible_len = len(str(traps[0])) + 1
+                padding = 9 - 2 - visible_len
+                cell = f"  {num_str}{' ' * padding}"
+            else:
+                # Empty
+                cell = "         "
+
+            row_items.append(cell)
+
+        lines.append("│" + "│".join(row_items) + "│")
+
+        # Middle border
+        if row_idx < size - 1:
+            lines.append("├" + "─────────┼" * (size - 1) + "─────────┤")
+
+    # Bottom border
+    lines.append("└" + "─────────┴" * (size - 1) + "─────────┘")
+
+    return "\n".join(lines)
+
+
+def _render_board(board: Board, title: str = "Board", rotate: bool = False, max_step: Optional[int] = None) -> str:
     """Render a board as ASCII art with numbered pieces and traps.
 
     Args:
         board: Board to render
         title: Title to display above the board
         rotate: If True, rotate the board 180 degrees (for opponent view)
+        max_step: If provided, only show moves up to this step (for fog of war)
     """
     size = board.boardSize
     lines = []
@@ -38,6 +138,9 @@ def _render_board(board: Board, title: str = "Board", rotate: bool = False) -> s
     position_contents: dict[tuple[int, int], tuple[list[int], list[int]]] = {}
 
     for move in board.sequence:
+        # Skip moves beyond max_step (fog of war)
+        if max_step is not None and move.order > max_step:
+            continue
         if move.position.row >= 0:  # Skip final moves
             if rotate:
                 # Rotate 180 degrees
@@ -110,13 +213,37 @@ def _render_board(board: Board, title: str = "Board", rotate: bool = False) -> s
     return "\n".join(lines)
 
 
-def _render_result_details(result: RoundResult) -> None:
-    """Render detailed simulation results similar to TypeScript output."""
+def _render_result_details(result: RoundResult, fog_of_war: bool = False) -> None:
+    """Render detailed simulation results similar to TypeScript output.
+
+    Args:
+        result: Round result to render
+        fog_of_war: If True, hide opponent traps that player didn't hit
+    """
     click.echo("\n" + click.style("🎮 Simulation Results", bold=True) + "\n")
+
+    # Determine what to hide based on fog of war
+    hidden_trap_position = None
+
+    if fog_of_war:
+        # Find the trap position the player hit (if any)
+        player_hit_trap_at = None
+        if result.simulationDetails.playerHitTrap:
+            # Player's final position is where they hit the trap
+            player_hit_trap_at = result.playerFinalPosition
+
+        # We'll pass this info to the render function
+        # For now, we'll handle it by filtering the opponent board sequence
 
     # Show boards side by side (opponent board rotated 180 degrees)
     player_lines = _render_board(result.playerBoard, "Player").split('\n')
-    opponent_lines = _render_board(result.opponentBoard, "Opponent", rotate=True).split('\n')
+    opponent_title = "Opponent" + (" (Fog of War)" if fog_of_war else "")
+
+    if fog_of_war:
+        # Create filtered opponent board showing only: pieces and traps player hit
+        opponent_lines = _render_board_fog_of_war(result, opponent_title).split('\n')
+    else:
+        opponent_lines = _render_board(result.opponentBoard, opponent_title, rotate=True).split('\n')
 
     max_lines = max(len(player_lines), len(opponent_lines))
 
@@ -253,16 +380,144 @@ def _render_result_details(result: RoundResult) -> None:
 
 
 @cli.command()
-@click.argument("board_file", type=click.Path(exists=True))
+@click.argument("board_file", type=click.Path(exists=True), required=False)
 @click.option("--player-index", default=0, type=int, help="Player board index in file")
 @click.option("--opponent-index", default=1, type=int, help="Opponent board index in file")
-def test(board_file: str, player_index: int, opponent_index: int):
+@click.option("-i", "--interactive", is_flag=True, help="Interactive board builder mode")
+@click.option("--size", type=int, help="Board size for interactive mode (2-100)")
+@click.option("--start-col", type=int, help="Starting column for interactive mode")
+@click.option("--show-all", is_flag=True, help="Show all opponent traps (not just ones you hit)")
+def test(board_file: Optional[str], player_index: int, opponent_index: int, interactive: bool, size: Optional[int], start_col: Optional[int], show_all: bool):
     """
     Run a single simulation test with detailed output.
 
     Similar to TypeScript CLI 'test' command - shows boards, step-by-step
     moves, and complete results.
+
+    Use --interactive to build a board interactively.
     """
+    # Interactive mode
+    if interactive:
+        click.echo(click.style("\n🎮 Interactive Board Builder", bold=True))
+        click.echo("Build your board step by step!\n")
+
+        board = build_board_interactive(size=size, start_col=start_col)
+
+        if board is None:
+            click.echo(click.style("\n✗ Board building cancelled", fg="yellow"))
+            sys.exit(0)
+
+        click.echo(click.style("\n✅ Board created successfully!", fg="green", bold=True))
+
+        # Optionally test against a random opponent
+        if board_file:
+            try:
+                boards = load_boards_from_json(board_file)
+                import random
+                opponent_board = random.choice(boards)
+
+                click.echo(f"\nTesting against random opponent from {board_file}...\n")
+                result = simulate_round(1, board, opponent_board, silent=True)
+                _render_result_details(result, fog_of_war=not show_all)
+            except Exception as e:
+                click.echo(click.style(f"\n⚠️  Could not test against opponent: {e}", fg="yellow"))
+
+        # Show board JSON
+        click.echo(click.style("\n📋 Board JSON:", bold=True))
+        import json
+        board_dict = {
+            "boardSize": board.boardSize,
+            "grid": [[cell for cell in row] for row in board.grid],
+            "sequence": [
+                {
+                    "position": {"row": move.position.row, "col": move.position.col},
+                    "type": move.type,
+                    "order": move.order
+                }
+                for move in board.sequence
+            ]
+        }
+        click.echo(json.dumps(board_dict, indent=2))
+        click.echo()
+
+        # Prompt to save board
+        if click.confirm('Would you like to save this board?', default=True):
+            import os
+            default_filename = f"board_size_{board.boardSize}.json"
+            save_path = click.prompt('Save to file', default=default_filename, type=str)
+
+            try:
+                # Check if file exists and load existing boards
+                existing_boards = []
+                if os.path.exists(save_path):
+                    if click.confirm(f'File {save_path} already exists. Append to it?', default=True):
+                        try:
+                            with open(save_path, 'r') as f:
+                                existing_data = json.load(f)
+                                if isinstance(existing_data, list):
+                                    existing_boards = existing_data
+                                else:
+                                    click.echo(click.style('⚠️  Existing file is not a board array. Creating new file.', fg='yellow'))
+                        except Exception as e:
+                            click.echo(click.style(f'⚠️  Could not read existing file: {e}. Creating new file.', fg='yellow'))
+                    else:
+                        click.echo('Cancelled save.')
+                        return
+
+                # Check for duplicate boards
+                def boards_equal(board1: dict, board2: dict) -> bool:
+                    """Check if two boards are identical."""
+                    if board1['boardSize'] != board2['boardSize']:
+                        return False
+
+                    # Compare sequences (the authoritative source)
+                    seq1 = board1['sequence']
+                    seq2 = board2['sequence']
+
+                    if len(seq1) != len(seq2):
+                        return False
+
+                    for move1, move2 in zip(seq1, seq2):
+                        if (move1['position']['row'] != move2['position']['row'] or
+                            move1['position']['col'] != move2['position']['col'] or
+                            move1['type'] != move2['type'] or
+                            move1['order'] != move2['order']):
+                            return False
+
+                    return True
+
+                # Check if this board already exists
+                duplicate_index = None
+                for idx, existing_board in enumerate(existing_boards):
+                    if boards_equal(board_dict, existing_board):
+                        duplicate_index = idx
+                        break
+
+                if duplicate_index is not None:
+                    click.echo(click.style(
+                        f'\n⚠️  This board already exists in {save_path} at index {duplicate_index}',
+                        fg='yellow',
+                        bold=True
+                    ))
+                    click.echo('Board was not saved (duplicate detected).')
+                    return
+
+                # Append new board and save
+                existing_boards.append(board_dict)
+
+                with open(save_path, 'w') as f:
+                    json.dump(existing_boards, f, indent=2)
+
+                click.echo(click.style(f'\n✅ Board saved to {save_path} ({len(existing_boards)} total boards)', fg='green', bold=True))
+            except Exception as e:
+                click.echo(click.style(f'\n✗ Error saving board: {e}', fg='red'))
+
+        return
+
+    # Regular test mode
+    if not board_file:
+        click.echo(click.style("✗ Error: board_file is required when not using --interactive mode", fg="red"))
+        sys.exit(1)
     try:
         boards = load_boards_from_json(board_file)
 
@@ -281,7 +536,7 @@ def test(board_file: str, player_index: int, opponent_index: int):
 
         result = simulate_round(1, player_board, opponent_board, silent=True)
 
-        _render_result_details(result)
+        _render_result_details(result, fog_of_war=not show_all)
 
         click.echo()
 
@@ -468,11 +723,24 @@ def validate(board_file: str, verbose: bool):
     help="Random seed for reproducibility",
 )
 @click.option("--verbose", is_flag=True, help="Show detailed output for each round")
-def play(board_file: str, rounds: int, seed: Optional[int], verbose: bool):
+@click.option("--player-board", type=int, help="Use specific board index for player (from file)")
+@click.option("--opponent-board", type=int, help="Use specific board index for opponent (from file)")
+def play(board_file: str, rounds: int, seed: Optional[int], verbose: bool, player_board: Optional[int], opponent_board: Optional[int]):
     """
-    Play a game by simulating rounds with random board selections.
+    Play a game by simulating rounds with board selections.
 
-    Demonstrates game simulation with nice terminal output.
+    By default, randomly samples boards for each round. Use --player-board and
+    --opponent-board to specify exact boards by index.
+
+    Examples:
+      Play with random boards:
+        spaces-game play data/boards_size_3.json --rounds 5
+
+      Play specific boards against each other:
+        spaces-game play data/boards_size_3.json --player-board 0 --opponent-board 5 --rounds 1
+
+      Use one specific board, random opponents:
+        spaces-game play data/boards_size_3.json --player-board 10 --rounds 5
     """
     import random
     import numpy as np
@@ -491,24 +759,63 @@ def play(board_file: str, rounds: int, seed: Optional[int], verbose: bool):
     click.echo(f"{'=' * 60}\n")
 
     try:
-        pool = BoardPool(board_file)
-        deck_size = 10
-        player_deck = pool.sample(deck_size)
-        opponent_deck = pool.sample(deck_size)
+        # Load all boards from file
+        all_boards = load_boards_from_json(board_file)
+
+        # Validate specific board indices if provided
+        if player_board is not None:
+            if player_board < 0 or player_board >= len(all_boards):
+                click.echo(click.style(f"✗ Player board index {player_board} out of range (0-{len(all_boards)-1})", fg="red"))
+                sys.exit(1)
+            click.echo(f"Player using board #{player_board} from file")
+
+        if opponent_board is not None:
+            if opponent_board < 0 or opponent_board >= len(all_boards):
+                click.echo(click.style(f"✗ Opponent board index {opponent_board} out of range (0-{len(all_boards)-1})", fg="red"))
+                sys.exit(1)
+            click.echo(f"Opponent using board #{opponent_board} from file")
+
+        # Set up board sources
+        if player_board is not None and opponent_board is not None:
+            # Both boards specified - use same boards for all rounds
+            click.echo()
+            player_boards = [all_boards[player_board]] * rounds
+            opponent_boards = [all_boards[opponent_board]] * rounds
+        elif player_board is not None:
+            # Player board fixed, opponent random
+            click.echo(f"Opponents will be randomly selected from pool\n")
+            pool = BoardPool(board_file)
+            player_boards = [all_boards[player_board]] * rounds
+            opponent_boards = pool.sample(rounds)
+        elif opponent_board is not None:
+            # Opponent board fixed, player random
+            click.echo(f"Player boards will be randomly selected from pool\n")
+            pool = BoardPool(board_file)
+            player_boards = pool.sample(rounds)
+            opponent_boards = [all_boards[opponent_board]] * rounds
+        else:
+            # Both random - use deck system
+            click.echo()
+            pool = BoardPool(board_file)
+            deck_size = min(10, len(all_boards))
+            player_deck = pool.sample(deck_size)
+            opponent_deck = pool.sample(deck_size)
+
+            player_boards = []
+            opponent_boards = []
+            for _ in range(rounds):
+                player_boards.append(random.choice(player_deck))
+                opponent_boards.append(random.choice(opponent_deck))
 
         player_score = 0
         opponent_score = 0
 
         for round_num in range(1, rounds + 1):
-            # Random board selection
-            player_board_idx = random.randint(0, deck_size - 1)
-            opponent_board_idx = random.randint(0, deck_size - 1)
-
-            player_board = player_deck[player_board_idx]
-            opponent_board = opponent_deck[opponent_board_idx]
+            player_board_for_round = player_boards[round_num - 1]
+            opponent_board_for_round = opponent_boards[round_num - 1]
 
             # Simulate
-            result = simulate_round(round_num, player_board, opponent_board, silent=True)
+            result = simulate_round(round_num, player_board_for_round, opponent_board_for_round, silent=True)
 
             player_score += result.playerPoints
             opponent_score += result.opponentPoints
@@ -558,6 +865,80 @@ def play(board_file: str, rounds: int, seed: Optional[int], verbose: bool):
 
     except Exception as e:
         click.echo(click.style(f"\n✗ Error: {e}", fg="red"))
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("board_file", type=click.Path(exists=True))
+@click.option("--limit", type=int, help="Limit number of boards to display")
+@click.option("--index", type=int, help="Show only board at specific index")
+def show(board_file: str, limit: Optional[int], index: Optional[int]):
+    """
+    Display boards from a file with grid visualizations.
+
+    Shows each board with its visual grid, sequence info, and index.
+    """
+    click.echo(f"\n{'=' * 60}")
+    click.echo(f"Boards in File")
+    click.echo(f"{'=' * 60}")
+    click.echo(f"File: {board_file}\n")
+
+    try:
+        boards = load_boards_from_json(board_file)
+        click.echo(f"Total boards in file: {len(boards)}\n")
+
+        # Filter by index if specified
+        if index is not None:
+            if index < 0 or index >= len(boards):
+                click.echo(click.style(f"✗ Index {index} out of range (0-{len(boards)-1})", fg="red"))
+                sys.exit(1)
+            boards_to_show = [(index, boards[index])]
+        else:
+            # Apply limit if specified
+            if limit and limit < len(boards):
+                click.echo(f"Showing first {limit} boards (use --limit to show more)\n")
+                boards_to_show = list(enumerate(boards[:limit]))
+            else:
+                boards_to_show = list(enumerate(boards))
+
+        # Display each board
+        for idx, board in boards_to_show:
+            click.echo(click.style(f"{'=' * 60}", fg="cyan"))
+            click.echo(click.style(f"Board #{idx}", bold=True, fg="cyan"))
+            click.echo(click.style(f"{'=' * 60}", fg="cyan"))
+            click.echo(f"Size: {board.boardSize}x{board.boardSize}")
+            click.echo(f"Sequence length: {len(board.sequence)} moves")
+
+            # Count pieces and traps
+            pieces = sum(1 for m in board.sequence if m.type == 'piece')
+            traps = sum(1 for m in board.sequence if m.type == 'trap')
+            click.echo(f"Pieces: {pieces}, Traps: {traps}")
+
+            # Render the board
+            click.echo(_render_board(board, f"\nBoard #{idx} Grid"))
+            click.echo()
+
+            # Show sequence details if there are few boards
+            if len(boards_to_show) <= 5:
+                click.echo(click.style("Move Sequence:", bold=True))
+                for move in board.sequence:
+                    if move.type == 'final':
+                        click.echo(f"  {move.order}. {click.style('GOAL', fg='green', bold=True)} at row {move.position.row}")
+                    elif move.type == 'piece':
+                        click.echo(f"  {move.order}. {click.style('Move', fg='blue')} to ({move.position.row}, {move.position.col})")
+                    elif move.type == 'trap':
+                        click.echo(f"  {move.order}. {click.style('Trap', fg='red')} at ({move.position.row}, {move.position.col})")
+                click.echo()
+
+        if not index and limit and limit < len(boards):
+            click.echo(click.style(f"\n... {len(boards) - limit} more boards not shown", fg="yellow"))
+            click.echo(f"Use --limit {len(boards)} to show all, or --index N to show a specific board\n")
+
+    except Exception as e:
+        import traceback
+        click.echo(click.style(f"\n✗ Error: {e}", fg="red"))
+        if "--verbose" in sys.argv:
+            click.echo(traceback.format_exc())
         sys.exit(1)
 
 
