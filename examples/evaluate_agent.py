@@ -22,6 +22,7 @@ def evaluate_agent(
     n_episodes: int,
     seed: int = 0,
     verbose: bool = True,
+    perfect_info: bool = False,
 ) -> dict:
     """
     Evaluate agent performance.
@@ -33,6 +34,7 @@ def evaluate_agent(
         n_episodes: Number of episodes to evaluate
         seed: Random seed
         verbose: Print progress
+        perfect_info: Use perfect information mode
 
     Returns:
         Dictionary with evaluation metrics
@@ -45,6 +47,7 @@ def evaluate_agent(
         board_pool_path=board_pool,
         deck_size=10,
         opponent_strategy=opponent,
+        perfect_information=perfect_info,
     )
 
     # Track statistics
@@ -113,6 +116,7 @@ def evaluate_random_baseline(
     opponent: str,
     n_episodes: int,
     seed: int = 0,
+    perfect_info: bool = False,
 ) -> dict:
     """
     Evaluate random baseline (agent picks randomly).
@@ -122,6 +126,7 @@ def evaluate_random_baseline(
         opponent: Opponent strategy
         n_episodes: Number of episodes
         seed: Random seed
+        perfect_info: Use perfect information mode
 
     Returns:
         Dictionary with evaluation metrics
@@ -130,6 +135,7 @@ def evaluate_random_baseline(
         board_pool_path=board_pool,
         deck_size=10,
         opponent_strategy=opponent,
+        perfect_information=perfect_info,
     )
 
     wins = 0
@@ -212,6 +218,11 @@ def main():
         action="store_true",
         help="Also evaluate random baseline for comparison",
     )
+    parser.add_argument(
+        "--perfect-info",
+        action="store_true",
+        help="Use perfect information mode (must match training mode)",
+    )
 
     args = parser.parse_args()
 
@@ -226,6 +237,7 @@ def main():
     print(f"Model:       {args.model_path}")
     print(f"Board Pool:  {args.board_pool}")
     print(f"Opponent:    {args.opponent}")
+    print(f"Perfect Info: {'YES' if args.perfect_info else 'NO'}")
     print(f"Episodes:    {args.episodes:,}")
     print(f"Seed:        {args.seed}")
     print("=" * 70)
@@ -240,6 +252,7 @@ def main():
         args.episodes,
         args.seed,
         verbose=True,
+        perfect_info=args.perfect_info,
     )
 
     print()
@@ -265,6 +278,7 @@ def main():
             args.opponent,
             args.episodes,
             args.seed + 10000,
+            perfect_info=args.perfect_info,
         )
 
         print()
