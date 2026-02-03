@@ -332,9 +332,9 @@ def test_parity(test_file: str):
             expected_result = test_case.get("result")
 
             # Convert to Board objects
-            from .board_loader import board_from_dict
-            player_board = board_from_dict(player_board_data)
-            opponent_board = board_from_dict(opponent_board_data)
+            from .board_loader import load_board_from_dict
+            player_board = load_board_from_dict(player_board_data)
+            opponent_board = load_board_from_dict(opponent_board_data)
 
             # Run simulation
             result = simulate_round(1, player_board, opponent_board, silent=True)
@@ -342,8 +342,8 @@ def test_parity(test_file: str):
             # Compare results
             match = (
                 result.winner == expected_result["winner"]
-                and result.playerPoints == expected_result["playerPoints"]
-                and result.opponentPoints == expected_result["opponentPoints"]
+                and result.playerPoints == expected_result["playerScore"]
+                and result.opponentPoints == expected_result["opponentScore"]
                 and result.collision == expected_result["collision"]
                 and result.playerFinalPosition.row == expected_result["playerFinalPosition"]["row"]
                 and result.playerFinalPosition.col == expected_result["playerFinalPosition"]["col"]
