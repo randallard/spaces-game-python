@@ -173,7 +173,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
         grid = np.zeros((self.board_size, self.board_size, 4), dtype=np.float32)
 
         for move in board.sequence:
-            if move.type == "goal":
+            if move.type == "final":
                 continue  # Skip goal moves
 
             row, col = move.position.row, move.position.col
@@ -251,7 +251,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
         grid = np.zeros((self.board_size, self.board_size, 2), dtype=np.int32)
 
         for move in board.sequence:
-            if move.type == "goal":
+            if move.type == "final":
                 continue
 
             row, col = move.position.row, move.position.col
@@ -356,11 +356,11 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             # Determine move type
             move_type = "piece" if piece_or_trap == 0 else "trap"
 
-            # Check if this is the goal move
+            # Check if this is the final/goal move
             if len(self.placed_moves) == len(self.target_sequence) - 1:
-                # Last move should be goal
-                if self.target_sequence[-1].type == "goal":
-                    move_type = "goal"
+                # Last move should be final/goal
+                if self.target_sequence[-1].type == "final":
+                    move_type = "final"
 
             # Place the move
             if move_type == "piece":
@@ -474,30 +474,30 @@ class ReverseCurriculumBuilderEnv(gym.Env):
                         order=int(trap_order)
                     ))
 
-        # Add placed moves (including goal if applicable)
+        # Add placed moves (including final/goal if applicable)
         for move in self.placed_moves:
-            if move["type"] == "goal":
+            if move["type"] == "final":
                 all_moves.append(BoardMove(
                     position=Position(row=-1, col=-1),
-                    type="goal",
+                    type="final",
                     order=move["order"]
                 ))
 
         # Sort by order
         all_moves.sort(key=lambda m: m.order)
 
-        # Ensure goal is last
-        if not any(m.type == "goal" for m in all_moves):
+        # Ensure final is last
+        if not any(m.type == "final" for m in all_moves):
             all_moves.append(BoardMove(
                 position=Position(row=-1, col=-1),
-                type="goal",
+                type="final",
                 order=len(all_moves) + 1
             ))
 
         # Build string grid
         str_grid = [["." for _ in range(self.board_size)] for _ in range(self.board_size)]
         for move in all_moves:
-            if move.type == "goal":
+            if move.type == "final":
                 continue
             row, col = move.position.row, move.position.col
             if move.type == "piece":
