@@ -41,6 +41,8 @@ from .simulation import (
 from .gym_env import SpacesGameEnv
 from .construction_env import BoardConstructionEnv
 from .builder_env import BoardBuilderEnv
+from .modifier_env import BoardModifierEnv
+from .reverse_builder_env import ReverseCurriculumBuilderEnv
 
 __all__ = [
     "__version__",
@@ -67,4 +69,6 @@ __all__ = [
     "SpacesGameEnv",
     "BoardConstructionEnv",
     "BoardBuilderEnv",
+    "BoardModifierEnv",
+    "ReverseCurriculumBuilderEnv",
 ]
