@@ -1,0 +1,378 @@
+[
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "piece",
+        "empty"
+      ],
+      [
+        "trap",
+        "trap"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 0
+        },
+        "type": "final",
+        "order": 5
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "empty",
+        "piece"
+      ],
+      [
+        "trap",
+        "trap"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 5
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "piece",
+        "empty"
+      ],
+      [
+        "piece",
+        "trap"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 0
+        },
+        "type": "final",
+        "order": 4
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "empty",
+        "piece"
+      ],
+      [
+        "trap",
+        "piece"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 4
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "piece",
+        "empty"
+      ],
+      [
+        "piece",
+        "empty"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 0
+        },
+        "type": "final",
+        "order": 3
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "empty",
+        "piece"
+      ],
+      [
+        "empty",
+        "piece"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 3
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "piece",
+        "empty"
+      ],
+      [
+        "trap",
+        "empty"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 0
+        },
+        "type": "final",
+        "order": 4
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "empty",
+        "piece"
+      ],
+      [
+        "empty",
+        "trap"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 4
+      }
+    ]
+  }
+]
