@@ -44,13 +44,29 @@ Each stage builds on the previous one's learned skills.
 - ✅ Evaluation: `evaluate_agent.py`
 - ✅ Validation: `test_board_selection.py`
 
+### Board Pools for Training:
+
+**Stage 0 uses curated board sets for controlled learning:**
+
+- `new_boards_2.json` ⭐ - 8 carefully designed size-2 boards for validation
+  - Used for controlled testing and optimal selection validation
+  - Covers key board patterns: traps, no-traps, left/right columns
+
+- `new_boards_3.json` ⚠️ **TODO** - Curated size-3 boards (needs creation)
+  - Should cover more strategic variety than size-2
+  - Recommend 12-16 boards with diverse trap/mobility patterns
+
+- `data/boards_size_2.json` - 16 auto-generated size-2 boards (for comparison)
+- `data/boards_size_3.json` - 500 auto-generated size-3 boards
+- `data/boards_size_3_large.json` - 1,704 size-3 boards (exhaustive)
+
 ### Training Commands:
 
 #### Phase 0a: Partial Observability (Baseline)
 ```bash
-# Size 2 boards - Learn basics
+# Size 2 boards - Learn basics with curated set
 python examples/train_basic.py \
-    --board-pool data/boards_size_2.json \
+    --board-pool new_boards_2.json \
     --opponent greedy \
     --timesteps 500000 \
     --n-envs 4 \
@@ -64,9 +80,9 @@ python examples/train_basic.py \
 
 #### Phase 0b: Perfect Information
 ```bash
-# Size 2 with perfect info
+# Size 2 with perfect info (curated boards)
 python examples/train_basic.py \
-    --board-pool data/boards_size_2.json \
+    --board-pool new_boards_2.json \
     --perfect-info \
     --opponent greedy \
     --timesteps 500000 \
@@ -80,8 +96,26 @@ python examples/train_basic.py \
 - Learns board matchup fundamentals
 
 #### Phase 0c: Scale to Size 3
+
+**⚠️ PREREQUISITE**: Create `new_boards_3.json` with curated size-3 boards first!
+
+Recommended: 12-16 boards covering:
+- Various trap placements (corner, center, edge)
+- Different path lengths (3-7 steps)
+- Mobility vs trap-heavy strategies
+
 ```bash
-# Size 3 with perfect info (more complexity)
+# Size 3 with perfect info (curated boards - AFTER creating new_boards_3.json)
+python examples/train_basic.py \
+    --board-pool new_boards_3.json \
+    --perfect-info \
+    --opponent greedy \
+    --timesteps 1000000 \
+    --n-envs 4 \
+    --save-freq 50000 \
+    --eval-freq 10000
+
+# Alternative: Use auto-generated boards for more variety
 python examples/train_basic.py \
     --board-pool data/boards_size_3_large.json \
     --perfect-info \
@@ -101,7 +135,7 @@ python examples/train_basic.py \
 Before moving to Stage 1, agent must demonstrate board understanding:
 
 ```bash
-# Test optimal selection accuracy
+# Test optimal selection accuracy on size 2
 python examples/test_board_selection.py \
     models/ppo_spacegame_final.zip \
     --board-pool new_boards_2.json \
@@ -111,6 +145,8 @@ python examples/test_board_selection.py \
 **Success Criteria**: ≥80% optimal board selection accuracy
 
 **If agent fails (<80%)**: More training needed, or hyperparameter tuning required.
+
+**Note**: This uses `new_boards_2.json` - the curated 8-board validation set designed specifically for testing optimal selection.
 
 ---
 
