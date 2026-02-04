@@ -109,6 +109,15 @@ class PhaseProgressionCallback(BaseCallback):
             # Extract info from vectorized env
             if isinstance(info, list):
                 info = info[0]
+            elif isinstance(info, tuple):
+                # In case info is still wrapped in a tuple
+                info = info[0] if len(info) > 0 else {}
+
+            # Ensure info is a dict
+            if not isinstance(info, dict):
+                if self.verbose >= 1:
+                    print(f"  Warning: info is {type(info)}, expected dict. Skipping episode.")
+                continue
 
             if info.get('valid_board', False):
                 valid_boards += 1
