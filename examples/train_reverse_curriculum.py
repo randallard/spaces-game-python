@@ -88,7 +88,14 @@ class PhaseProgressionCallback(BaseCallback):
             while not done:
                 action, _states = self.model.predict(obs, deterministic=True)
                 obs, reward, done, info = self.training_env.step(action)
-                episode_reward += reward[0] if isinstance(reward, np.ndarray) else reward
+
+                # Handle vectorized env outputs
+                if isinstance(done, np.ndarray):
+                    done = done[0]
+                if isinstance(reward, np.ndarray):
+                    episode_reward += reward[0]
+                else:
+                    episode_reward += reward
 
             # Extract info from vectorized env
             if isinstance(info, list):
