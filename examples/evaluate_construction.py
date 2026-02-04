@@ -145,6 +145,74 @@ def evaluate_agent(
     }
 
 
+def evaluate_curriculum(model_path: str, n_episodes_per_board: int = 10):
+    """
+    Evaluate agent against all boards in curriculum (fixed_0 through fixed_7).
+
+    Args:
+        model_path: Path to trained model
+        n_episodes_per_board: Episodes per opponent board
+
+    Returns:
+        dict with detailed per-board results
+    """
+    print("=" * 70)
+    print("CURRICULUM EVALUATION (All 8 Opponent Boards)")
+    print("=" * 70)
+    print(f"Model: {model_path}")
+    print(f"Episodes per board: {n_episodes_per_board}")
+
+    board_results = {}
+
+    for board_idx in range(8):
+        strategy = f"fixed_{board_idx}"
+        print(f"\n{'='*70}")
+        print(f"Evaluating vs Opponent Board {board_idx}")
+        print(f"{'='*70}")
+
+        result = evaluate_agent(
+            model_path,
+            opponent_strategy=strategy,
+            n_episodes=n_episodes_per_board,
+            seed=42,
+            verbose=True,
+        )
+        board_results[board_idx] = result
+
+    # Summary table
+    print("\n" + "=" * 70)
+    print("PER-BOARD SUMMARY")
+    print("=" * 70)
+    print(f"{'Opp Board':<10} {'Win Rate':<12} {'Avg Diff':<15} {'Agent/Opp Score'}")
+    print("-" * 70)
+
+    for board_idx in range(8):
+        r = board_results[board_idx]
+        print(f"Board {board_idx:<4} "
+              f"{r['win_rate']*100:5.1f}%       "
+              f"{r['avg_score_diff']:+6.1f} ± {r['std_score_diff']:4.1f}    "
+              f"{r['avg_agent_score']:5.1f} / {r['avg_opponent_score']:5.1f}")
+
+    # Overall stats
+    overall_win_rate = np.mean([r['win_rate'] for r in board_results.values()])
+    overall_avg_diff = np.mean([r['avg_score_diff'] for r in board_results.values()])
+
+    print("=" * 70)
+    print(f"OVERALL (all 8 boards): {overall_win_rate*100:.1f}% win rate, {overall_avg_diff:+.1f} avg diff")
+
+    if overall_win_rate >= 0.95:
+        print("✓ EXCELLENT! Agent mastered all opponent boards.")
+    elif overall_win_rate >= 0.80:
+        print("✓ GOOD! Agent learned strong counters for most boards.")
+    elif overall_win_rate >= 0.60:
+        print("⚠ FAIR. Agent shows adaptive behavior but needs refinement.")
+    else:
+        print("✗ POOR. Agent hasn't learned board-specific counters.")
+
+    print("=" * 70)
+    return board_results
+
+
 def evaluate_all_strategies(model_path: str, n_episodes: int = 100):
     """
     Evaluate agent against all opponent strategies.
@@ -216,15 +284,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--strategy",
         type=str,
-        choices=["random", "greedy", "fixed", "all"],
-        default="all",
-        help="Opponent strategy to evaluate against (default: all)",
+        choices=["random", "greedy", "fixed", "all", "curriculum"],
+        default="curriculum",
+        help="Opponent strategy to evaluate against (default: curriculum)",
     )
     parser.add_argument(
         "--episodes",
         type=int,
         default=100,
-        help="Number of evaluation episodes (default: 100)",
+        help="Number of evaluation episodes (default: 100, or per-board if curriculum)",
     )
     parser.add_argument(
         "--seed",
@@ -235,7 +303,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.strategy == "all":
+    if args.strategy == "curriculum":
+        # Evaluate against all 8 boards (episodes = per board)
+        evaluate_curriculum(args.model_path, n_episodes_per_board=args.episodes)
+    elif args.strategy == "all":
         evaluate_all_strategies(args.model_path, n_episodes=args.episodes)
     else:
         evaluate_agent(

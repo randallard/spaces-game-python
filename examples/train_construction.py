@@ -24,39 +24,44 @@ from stable_baselines3.common.monitor import Monitor
 from spaces_game import BoardConstructionEnv
 
 
-class MixedOpponentWrapper(gym.Wrapper):
+class FixedBoardCurriculumWrapper(gym.Wrapper):
     """
-    Wrapper that randomizes opponent strategy each episode.
+    Wrapper that cycles through fixed opponent boards for balanced training.
 
-    Forces agent to learn adaptive counter-play rather than
-    memorizing one fixed strategy.
+    Ensures agent learns optimal counter for EACH board in the library
+    by giving equal training time to each opponent board.
     """
 
-    def __init__(self, env: BoardConstructionEnv, strategy_weights: Dict[str, float] = None):
+    def __init__(self, env: BoardConstructionEnv, curriculum_mode: str = "cycle"):
         super().__init__(env)
-        self.strategies = ["random", "greedy", "fixed"]
-
-        if strategy_weights is None:
-            # Default: favor random, but include fixed opponents for counter-learning
-            self.weights = [0.4, 0.3, 0.3]
-        else:
-            self.weights = [strategy_weights.get(s, 0.0) for s in self.strategies]
+        self.library_size = len(env.opponent_library)
+        self.curriculum_mode = curriculum_mode
+        self.episode_count = 0
+        self.current_board_idx = 0
 
     def reset(self, **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        # Pick new opponent strategy for this episode
-        strategy = py_random.choices(self.strategies, weights=self.weights, k=1)[0]
-        self.env.opponent_strategy = strategy
+        if self.curriculum_mode == "cycle":
+            # Cycle through boards sequentially: 0, 1, 2, ..., 7, 0, 1, ...
+            self.current_board_idx = self.episode_count % self.library_size
+        elif self.curriculum_mode == "random":
+            # Random selection (fallback for comparison)
+            self.current_board_idx = py_random.randint(0, self.library_size - 1)
+
+        # Override opponent selection to use specific board
+        self.env.opponent_strategy = f"fixed_{self.current_board_idx}"
+
+        self.episode_count += 1
         return self.env.reset(**kwargs)
 
 
-def make_env(rank: int, seed: int = 0, mixed_opponents: bool = True):
+def make_env(rank: int, seed: int = 0, curriculum: bool = True):
     """
     Create a single environment instance.
 
     Args:
         rank: Environment index (for parallel training)
         seed: Random seed offset
-        mixed_opponents: If True, randomize opponent strategy each episode
+        curriculum: If True, use fixed-board curriculum (cycle through all boards)
 
     Returns:
         Function that creates the environment
@@ -68,9 +73,9 @@ def make_env(rank: int, seed: int = 0, mixed_opponents: bool = True):
             show_opponent_board=True,    # Perfect information (Stage 1)
         )
 
-        # Wrap to randomize opponent each episode
-        if mixed_opponents:
-            env = MixedOpponentWrapper(env)
+        # Wrap to cycle through fixed boards for balanced training
+        if curriculum:
+            env = FixedBoardCurriculumWrapper(env, curriculum_mode="cycle")
 
         env.reset(seed=seed + rank)
         env = Monitor(env)
@@ -100,7 +105,7 @@ def train(
     print(f"Parallel envs:   {n_envs}")
     print(f"Eval frequency:  {eval_freq:,} steps")
     print(f"Save frequency:  {save_freq:,} steps")
-    print(f"Opponent mix:    40% random, 30% greedy, 30% fixed")
+    print(f"Curriculum:      Cycling through all 8 boards (equal training per board)")
     print("=" * 70)
 
     # Create directories

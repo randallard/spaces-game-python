@@ -338,6 +338,15 @@ class BoardConstructionEnv(gym.Env):
             # Always use first board (for testing counter-play)
             return self.opponent_library[0]
 
+        elif self.opponent_strategy.startswith("fixed_"):
+            # Fixed board by index: "fixed_0", "fixed_1", etc.
+            try:
+                board_idx = int(self.opponent_strategy.split("_")[1])
+                return self.opponent_library[board_idx]
+            except (ValueError, IndexError):
+                # Fall back to random if invalid
+                return random.choice(self.opponent_library)
+
         else:
             # Default to random
             return random.choice(self.opponent_library)
