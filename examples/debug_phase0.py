@@ -66,6 +66,16 @@ def debug_episode():
             print(f"    Moves placed: {info.get('moves_placed', 0)}")
             print(f"    Moves required: {info.get('moves_required', 0)}")
 
+            # Show constructed board
+            print(f"\n  Constructed board details:")
+            print(f"    Placed moves: {env.placed_moves}")
+
+            # Try to get the actual board
+            agent_board = env._construct_board_from_state()
+            print(f"    Board sequence ({len(agent_board.sequence)} moves):")
+            for move in agent_board.sequence:
+                print(f"      {move.order}. {move.type} at ({move.position.row}, {move.position.col})")
+
     env.close()
 
     print(f"\nTotal reward: {total_reward:.2f}")
