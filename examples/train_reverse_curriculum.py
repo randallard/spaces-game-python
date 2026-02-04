@@ -87,9 +87,16 @@ class PhaseProgressionCallback(BaseCallback):
 
             while not done:
                 action, _states = self.model.predict(obs, deterministic=True)
-                # Gymnasium API returns 5 values: obs, reward, terminated, truncated, info
-                obs, reward, terminated, truncated, info = self.training_env.step(action)
-                done = terminated or truncated
+                # stable-baselines3 vectorized envs use old 4-value API
+                step_result = self.training_env.step(action)
+
+                if len(step_result) == 5:
+                    # New Gymnasium API: obs, reward, terminated, truncated, info
+                    obs, reward, terminated, truncated, info = step_result
+                    done = terminated or truncated
+                else:
+                    # Old Gym API: obs, reward, done, info
+                    obs, reward, done, info = step_result
 
                 # Handle vectorized env outputs
                 if isinstance(done, np.ndarray):
