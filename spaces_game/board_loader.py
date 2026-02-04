@@ -195,6 +195,20 @@ class BoardPool:
         """Get board by index."""
         return self.boards[index]
 
+    def get_all_boards(self) -> list[Board]:
+        """
+        Get all boards in the pool.
+
+        Returns:
+            Complete list of all boards
+
+        Example:
+            >>> pool = BoardPool('new_boards_2.json')
+            >>> all_boards = pool.get_all_boards()
+            >>> print(f"Library has {len(all_boards)} boards")
+        """
+        return self.boards
+
     def __len__(self) -> int:
         """Number of boards in the pool."""
         return len(self.boards)
