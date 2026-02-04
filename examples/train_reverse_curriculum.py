@@ -87,11 +87,13 @@ class PhaseProgressionCallback(BaseCallback):
 
             while not done:
                 action, _states = self.model.predict(obs, deterministic=True)
-                obs, reward, done, info = self.training_env.step(action)
+                # Gymnasium API returns 5 values: obs, reward, terminated, truncated, info
+                obs, reward, terminated, truncated, info = self.training_env.step(action)
+                done = terminated or truncated
 
                 # Handle vectorized env outputs
                 if isinstance(done, np.ndarray):
-                    done = done[0]
+                    done = done.any()  # Episode done if any env is done
                 if isinstance(reward, np.ndarray):
                     episode_reward += reward[0]
                 else:
