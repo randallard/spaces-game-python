@@ -95,10 +95,13 @@ class ReverseCurriculumBuilderEnv(gym.Env):
 
         # Load Stage 1 model if provided
         self.stage1_model = None
+        self._stage1_loaded = False
         if stage1_model_path and Path(stage1_model_path).exists():
             from stable_baselines3 import PPO
             self.stage1_model = PPO.load(stage1_model_path)
-            print(f"✓ Loaded Stage 1 model from {stage1_model_path}")
+            self._stage1_loaded = True
+            # Only print in non-parallel contexts (rank 0 or single env)
+            # Suppress for parallel envs to avoid cluttering output
         else:
             if stage1_model_path:
                 print(f"⚠ Stage 1 model not found: {stage1_model_path}")

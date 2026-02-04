@@ -47,7 +47,7 @@ class PhaseProgressionCallback(BaseCallback):
     def __init__(
         self,
         eval_freq: int = 1000,
-        eval_episodes: int = 20,
+        eval_episodes: int = 10,  # Reduced from 20 for faster evaluation
         win_rate_threshold: float = 0.80,
         max_phase: int = 10,
         verbose: int = 1,
@@ -235,7 +235,7 @@ def train(
         print("   Will use random base board selection (suboptimal)")
         stage1_model_path = None
     else:
-        print(f"   ✓ Stage 1 model loaded")
+        print(f"   ✓ Stage 1 model will be loaded in each environment")
 
     print(f"\nCurriculum Strategy:")
     print(f"  - Phase 0: Place goal only (1 move)")
@@ -263,7 +263,7 @@ def train(
     # Callbacks
     phase_callback = PhaseProgressionCallback(
         eval_freq=eval_freq,
-        eval_episodes=20,
+        eval_episodes=10,  # Reduced for faster evaluation
         win_rate_threshold=0.80,
         max_phase=10,
         verbose=1,
