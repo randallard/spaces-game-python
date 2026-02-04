@@ -65,11 +65,21 @@ def evaluate_agent(
         episode_reward = 0
         done = False
 
+        # Track board selections for each round
+        agent_boards = []
+        opponent_boards = []
+
         while not done:
             # Agent selects action using trained policy
             action, _states = model.predict(obs, deterministic=True)
+            agent_boards.append(int(action))
+
             obs, reward, done, truncated, info = env.step(action)
             episode_reward += reward
+
+            # Track opponent's last board selection from history
+            if len(env.opponent_history) > len(opponent_boards):
+                opponent_boards.append(env.opponent_history[-1])
 
         # Record results
         agent_score = info['agent_total_score']
@@ -91,8 +101,9 @@ def evaluate_agent(
             result = "TIE"
 
         if verbose and episode < 10:  # Show first 10 episodes
+            boards_str = " ".join([f"A{a}:O{o}" for a, o in zip(agent_boards, opponent_boards)])
             print(f"Episode {episode+1:3d}: {agent_score:3d}-{opponent_score:3d} "
-                  f"({result:4s}) Reward: {episode_reward:+7.1f}")
+                  f"({result:4s}) [{boards_str}] Reward: {episode_reward:+7.1f}")
 
     env.close()
 

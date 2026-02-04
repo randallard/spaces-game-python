@@ -13,6 +13,9 @@ tensorboard. Monitor progress with:
 """
 
 import os
+import random as py_random
+import gymnasium as gym
+from typing import Any, Dict, Tuple
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
@@ -21,13 +24,39 @@ from stable_baselines3.common.monitor import Monitor
 from spaces_game import BoardConstructionEnv
 
 
-def make_env(rank: int, seed: int = 0):
+class MixedOpponentWrapper(gym.Wrapper):
+    """
+    Wrapper that randomizes opponent strategy each episode.
+
+    Forces agent to learn adaptive counter-play rather than
+    memorizing one fixed strategy.
+    """
+
+    def __init__(self, env: BoardConstructionEnv, strategy_weights: Dict[str, float] = None):
+        super().__init__(env)
+        self.strategies = ["random", "greedy", "fixed"]
+
+        if strategy_weights is None:
+            # Default: favor random, but include fixed opponents for counter-learning
+            self.weights = [0.4, 0.3, 0.3]
+        else:
+            self.weights = [strategy_weights.get(s, 0.0) for s in self.strategies]
+
+    def reset(self, **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        # Pick new opponent strategy for this episode
+        strategy = py_random.choices(self.strategies, weights=self.weights, k=1)[0]
+        self.env.opponent_strategy = strategy
+        return self.env.reset(**kwargs)
+
+
+def make_env(rank: int, seed: int = 0, mixed_opponents: bool = True):
     """
     Create a single environment instance.
 
     Args:
         rank: Environment index (for parallel training)
         seed: Random seed offset
+        mixed_opponents: If True, randomize opponent strategy each episode
 
     Returns:
         Function that creates the environment
@@ -35,9 +64,14 @@ def make_env(rank: int, seed: int = 0):
     def _init():
         env = BoardConstructionEnv(
             board_library_path="new_boards_2.json",
-            opponent_strategy="random",  # Random opponent for diversity
+            opponent_strategy="random",  # Will be overridden by wrapper
             show_opponent_board=True,    # Perfect information (Stage 1)
         )
+
+        # Wrap to randomize opponent each episode
+        if mixed_opponents:
+            env = MixedOpponentWrapper(env)
+
         env.reset(seed=seed + rank)
         env = Monitor(env)
         return env
@@ -66,6 +100,7 @@ def train(
     print(f"Parallel envs:   {n_envs}")
     print(f"Eval frequency:  {eval_freq:,} steps")
     print(f"Save frequency:  {save_freq:,} steps")
+    print(f"Opponent mix:    40% random, 30% greedy, 30% fixed")
     print("=" * 70)
 
     # Create directories
