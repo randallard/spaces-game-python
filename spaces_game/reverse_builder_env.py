@@ -367,14 +367,25 @@ class ReverseCurriculumBuilderEnv(gym.Env):
                 self.building_grid[row, col, 0] = order
             elif move_type == "trap":
                 self.building_grid[row, col, 1] = order
-            # Goal doesn't update grid
+            # Final move doesn't update grid (no physical position)
 
-            self.placed_moves.append({
-                "row": row,
-                "col": col,
-                "type": move_type,
-                "order": order,
-            })
+            # Record the move
+            if move_type == "final":
+                # Final move has no physical position
+                self.placed_moves.append({
+                    "row": -1,
+                    "col": -1,
+                    "type": move_type,
+                    "order": order,
+                })
+            else:
+                self.placed_moves.append({
+                    "row": row,
+                    "col": col,
+                    "type": move_type,
+                    "order": order,
+                })
+
             self.construction_step += 1
 
             # Small reward for making progress
