@@ -154,6 +154,38 @@ class ReverseCurriculumBuilderEnv(gym.Env):
         else:
             return self.library[0]
 
+    def _encode_board_for_stage1(self, board: Board) -> np.ndarray:
+        """
+        Encode a board for Stage 1 model input.
+
+        Stage 1 expects a 4-channel representation:
+        - Channel 0: has_piece (0 or 1)
+        - Channel 1: piece_order (0 if no piece, 1-N for sequence order)
+        - Channel 2: has_trap (0 or 1)
+        - Channel 3: trap_order (0 if no trap, 1-N for sequence order)
+
+        Returns:
+            Grid of shape (board_size, board_size, 4) with dtype float32
+        """
+        grid = np.zeros((self.board_size, self.board_size, 4), dtype=np.float32)
+
+        for move in board.sequence:
+            if move.type == "goal":
+                continue  # Skip goal moves
+
+            row, col = move.position.row, move.position.col
+            if row < 0 or col < 0:  # Skip invalid positions
+                continue
+
+            if move.type == "piece":
+                grid[row, col, 0] = 1.0  # has_piece
+                grid[row, col, 1] = float(move.order)  # piece_order
+            elif move.type == "trap":
+                grid[row, col, 2] = 1.0  # has_trap
+                grid[row, col, 3] = float(move.order)  # trap_order
+
+        return grid
+
     def _select_base_board_with_stage1(self, opponent_board: Board) -> Board:
         """
         Use Stage 1 frozen policy to select optimal base board.
@@ -164,15 +196,18 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             # Fallback: random selection
             return self.library[np.random.randint(len(self.library))]
 
-        # Create Stage 1 observation
-        # Stage 1 expects: opponent board grid representation
-        opponent_grid = self._board_to_grid(opponent_board)
+        # Create Stage 1 observation with correct format
+        opponent_grid = self._encode_board_for_stage1(opponent_board)
 
-        # Stage 1's observation space (simplified version)
+        # Stage 1's observation space (must match training format)
         stage1_obs = {
-            "round": 0,
-            "score_diff": 0,
-            "opponent_board": opponent_grid,
+            "round": 0,  # int, matches Discrete(5)
+            "score_diff": np.array([0.0], dtype=np.float32),
+            "agent_score": np.array([0.0], dtype=np.float32),
+            "opponent_score": np.array([0.0], dtype=np.float32),
+            "agent_history": np.array([-1, -1, -1, -1, -1], dtype=np.int32),
+            "opponent_history": np.array([-1, -1, -1, -1, -1], dtype=np.int32),
+            "opponent_board": opponent_grid,  # (board_size, board_size, 4) float32
         }
 
         # Get Stage 1 prediction (frozen, deterministic)
