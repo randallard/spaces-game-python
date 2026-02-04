@@ -92,12 +92,15 @@ class BoardBuilderEnv(gym.Env):
         self.opponent_pool = BoardPool(opponent_library_path, cache=True)
         self.opponent_library = self.opponent_pool.get_all_boards()
 
-        # Action space: cell to place (flattened), type (piece/trap), done flag
-        self.action_space = spaces.Dict({
-            "cell": spaces.Discrete(board_size * board_size),
-            "type": spaces.Discrete(2),  # 0=piece, 1=trap
-            "done": spaces.Discrete(2),  # 0=continue, 1=finish
-        })
+        # Action space: [cell, type, done] as MultiDiscrete (PPO compatible)
+        # cell: which cell to place in (0 to board_size²-1)
+        # type: 0=piece, 1=trap
+        # done: 0=continue, 1=finish
+        self.action_space = spaces.MultiDiscrete([
+            board_size * board_size,  # cell
+            2,                         # type
+            2,                         # done
+        ])
 
         # Observation space
         obs_space_dict = {
@@ -182,20 +185,23 @@ class BoardBuilderEnv(gym.Env):
 
     def step(
         self,
-        action: Dict[str, int]
+        action: np.ndarray
     ) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
         """
         Execute one construction step or finish board and play round.
 
         Args:
-            action: Dict with 'cell', 'type', 'done'
+            action: Array [cell_idx, piece_or_trap, done_building]
+                - cell_idx: 0 to board_size²-1
+                - piece_or_trap: 0=piece, 1=trap
+                - done_building: 0=continue, 1=finish
 
         Returns:
             observation, reward, terminated, truncated, info
         """
-        cell_idx = action["cell"]
-        piece_or_trap = action["type"]  # 0=piece, 1=trap
-        done_building = action["done"]  # 0=continue, 1=finish
+        cell_idx = int(action[0])
+        piece_or_trap = int(action[1])  # 0=piece, 1=trap
+        done_building = int(action[2])  # 0=continue, 1=finish
 
         # If done flag set, finish board and play round
         if done_building == 1 or self.construction_step >= self.max_construction_steps:

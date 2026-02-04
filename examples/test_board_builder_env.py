@@ -34,11 +34,7 @@ def test_basic_construction():
 
     # Step 1: Place first piece in bottom row (must be valid)
     # For 2x2 board, bottom row is row 1, cells 2 and 3
-    action = {
-        "cell": 2,      # Bottom-left (1,0)
-        "type": 0,      # Piece
-        "done": 0,      # Continue
-    }
+    action = [2, 0, 0]  # [cell=2 (bottom-left), type=0 (piece), done=0 (continue)]
 
     obs, reward, done, truncated, info = env.step(action)
     print(f"\n✓ Step 1: Placed piece at cell 2 (bottom-left)")
@@ -48,11 +44,7 @@ def test_basic_construction():
     print(f"  Building board:\n{obs['building_board'][:, :, 0]}")  # Piece orders
 
     # Step 2: Place adjacent piece
-    action = {
-        "cell": 3,      # Bottom-right (1,1), adjacent to first piece
-        "type": 0,      # Piece
-        "done": 0,      # Continue
-    }
+    action = [3, 0, 0]
 
     obs, reward, done, truncated, info = env.step(action)
     print(f"\n✓ Step 2: Placed piece at cell 3 (bottom-right)")
@@ -60,11 +52,7 @@ def test_basic_construction():
     print(f"  Building board:\n{obs['building_board'][:, :, 0]}")  # Piece orders
 
     # Step 3: Place trap on top of piece (supermove)
-    action = {
-        "cell": 2,      # Same as first piece
-        "type": 1,      # Trap
-        "done": 0,      # Continue
-    }
+    action = [2, 1, 0]
 
     obs, reward, done, truncated, info = env.step(action)
     print(f"\n✓ Step 3: Placed trap at cell 2 (supermove)")
@@ -73,11 +61,7 @@ def test_basic_construction():
     print(f"  Trap grid:\n{obs['building_board'][:, :, 1]}")
 
     # Step 4: Finish board
-    action = {
-        "cell": 0,      # Doesn't matter
-        "type": 0,      # Doesn't matter
-        "done": 1,      # FINISH
-    }
+    action = [0, 0, 1]
 
     obs, reward, done, truncated, info = env.step(action)
     print(f"\n✓ Step 4: Finished board")
@@ -121,7 +105,7 @@ def test_action_masking():
     print("✓ Initial masking correct")
 
     # Place piece at bottom-left
-    action = {"cell": 2, "type": 0, "done": 0}
+    action = [2, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
 
     # Now: adjacent cells should be valid (top-left, bottom-right)
@@ -134,7 +118,7 @@ def test_action_masking():
     print("✓ Adjacency masking correct")
 
     # Place piece at top-left
-    action = {"cell": 0, "type": 0, "done": 0}
+    action = [0, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
 
     # Now: top-right also becomes valid (adjacent to top-left)
@@ -165,7 +149,7 @@ def test_validity_checking():
 
     # Test 1: Try to place in top row (should fail)
     print("Test 1: Attempting invalid placement (top row, not bottom row)")
-    action = {"cell": 0, "type": 0, "done": 0}  # Top-left
+    action = [0, 0, 0]  # Top-left
     obs, reward, done, truncated, info = env.step(action)
 
     print(f"  Reward: {reward:.2f}")
@@ -183,19 +167,19 @@ def test_validity_checking():
     print("\nTest 2: Valid construction sequence")
 
     # Place in bottom row
-    action = {"cell": 2, "type": 0, "done": 0}
+    action = [2, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"  Step 1 (bottom-left): reward={reward:.2f}")
     assert reward >= 0, "Valid placement should give non-negative reward"
 
     # Place adjacent piece
-    action = {"cell": 3, "type": 0, "done": 0}
+    action = [3, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"  Step 2 (adjacent): reward={reward:.2f}")
     assert reward >= 0, "Valid adjacent placement should give non-negative reward"
 
     # Finish board
-    action = {"cell": 0, "type": 0, "done": 1}
+    action = [0, 0, 1]
     obs, reward, done, truncated, info = env.step(action)
     print(f"  Finish board: reward={reward:.2f}")
     print(f"  Round completed: {info['round']}")
@@ -224,17 +208,17 @@ def test_board_conversion():
     print("Building board: 2 pieces, 1 trap")
 
     # Piece at (1,0)
-    action = {"cell": 2, "type": 0, "done": 0}
+    action = [2, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"  Placed piece at (1,0)")
 
     # Piece at (1,1)
-    action = {"cell": 3, "type": 0, "done": 0}
+    action = [3, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"  Placed piece at (1,1)")
 
     # Trap at (1,0) - supermove
-    action = {"cell": 2, "type": 1, "done": 0}
+    action = [2, 1, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"  Placed trap at (1,0)")
 
@@ -243,7 +227,7 @@ def test_board_conversion():
     print(f"  Trap count: {info['trap_count']}")
 
     # Finish and convert to board
-    action = {"cell": 0, "type": 0, "done": 1}
+    action = [0, 0, 1]
     obs, reward, done, truncated, info = env.step(action)
 
     print(f"\n✓ Board finished and played")
@@ -293,20 +277,20 @@ def test_full_episode():
 
         while building:
             if construction_steps == 0:
-                action = {"cell": 2, "type": 0, "done": 0}  # Piece at (1,0)
+                action = [2, 0, 0]  # Piece at (1,0)
             elif construction_steps == 1:
-                action = {"cell": 3, "type": 0, "done": 0}  # Piece at (1,1)
+                action = [3, 0, 0]  # Piece at (1,1)
             elif construction_steps == 2:
-                action = {"cell": 2, "type": 1, "done": 1}  # Trap at (1,0), FINISH
+                action = [2, 1, 1]  # Trap at (1,0), FINISH
             else:
-                action = {"cell": 0, "type": 0, "done": 1}  # Should never reach here
+                action = [0, 0, 1]  # Should never reach here
 
             obs, reward, done, truncated, info = env.step(action)
             episode_reward += reward
             construction_steps += 1
 
             # Check if we finished building this round
-            if action["done"] == 1 or done:
+            if action[2] == 1 or done:
                 building = False
 
         print(f"  Constructed in {construction_steps} steps")
@@ -352,10 +336,10 @@ def test_invalid_board_penalty():
     # Test 1: Place piece and immediately finish (no path to goal)
     print("Test 1: Insufficient construction (single piece, no path)")
 
-    action = {"cell": 2, "type": 0, "done": 0}  # Piece at (1,0)
+    action = [2, 0, 0]  # Piece at (1,0)
     obs, reward, done, truncated, info = env.step(action)
 
-    action = {"cell": 0, "type": 0, "done": 1}  # Finish immediately
+    action = [0, 0, 1]  # Finish immediately
     obs, reward, done, truncated, info = env.step(action)
 
     print(f"  Reward: {reward:.2f}")
@@ -390,13 +374,13 @@ def test_supermove():
     obs, info = env.reset(seed=42)
 
     # Place piece at (1,0)
-    action = {"cell": 2, "type": 0, "done": 0}
+    action = [2, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"Step 1: Placed piece at cell 2 (order=1)")
     print(f"  Piece grid:\n{obs['building_board'][:, :, 0]}")
 
     # Place trap on same cell (supermove - valid because piece was placed first)
-    action = {"cell": 2, "type": 1, "done": 0}
+    action = [2, 1, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"\nStep 2: Placed trap at cell 2 (order=2, supermove)")
     print(f"  Piece grid:\n{obs['building_board'][:, :, 0]}")
@@ -412,7 +396,7 @@ def test_supermove():
     print("✓ Order validation: piece order (1) < trap order (2)")
 
     # Try to place another piece on same cell (should fail)
-    action = {"cell": 2, "type": 0, "done": 0}
+    action = [2, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"\nStep 3: Attempted to place another piece at cell 2")
     print(f"  Reward: {reward:.2f}")
@@ -441,23 +425,23 @@ def test_invalid_supermove_order():
     obs, info = env.reset(seed=42)
 
     # Place piece at (1,0) first
-    action = {"cell": 2, "type": 0, "done": 0}
+    action = [2, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"Step 1: Placed piece at cell 2 (order=1)")
 
     # Place piece at adjacent cell (1,1) to expand valid cells
-    action = {"cell": 3, "type": 0, "done": 0}
+    action = [3, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"Step 2: Placed piece at cell 3 (order=2)")
 
     # Place trap at (0,0) - now valid because adjacent to piece at (1,0)
-    action = {"cell": 0, "type": 1, "done": 0}
+    action = [0, 1, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"Step 3: Placed trap at cell 0 (order=3)")
     print(f"  Trap grid:\n{obs['building_board'][:, :, 1]}")
 
     # Try to place piece on cell 0 (where trap already exists) - should FAIL
-    action = {"cell": 0, "type": 0, "done": 0}
+    action = [0, 0, 0]
     obs, reward, done, truncated, info = env.step(action)
     print(f"\nStep 4: Attempted to place piece at cell 0 (where trap exists)")
     print(f"  Reward: {reward:.2f}")
