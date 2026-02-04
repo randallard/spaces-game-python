@@ -217,6 +217,7 @@ class BoardBuilderEnv(gym.Env):
 
         # Place piece or trap
         order = self.construction_step + 1
+        intermediate_reward = 0.0
 
         if piece_or_trap == 0:  # Piece
             # Check if cell already has piece
@@ -228,6 +229,22 @@ class BoardBuilderEnv(gym.Env):
             if self.building_grid[row, col, 1] > 0:
                 # Trap already there, cannot place piece after trap
                 return self._finish_board_and_play(invalid_penalty=-10.0)
+
+            # Reward shaping for piece placement
+            if self.construction_step == 0:
+                # First piece in bottom row
+                intermediate_reward += 1.0
+            else:
+                # Valid adjacent piece placement
+                intermediate_reward += 0.5
+
+            # Bonus for reaching new row (progressing toward goal)
+            if row < self.board_size - 1:  # Not in bottom row
+                intermediate_reward += 1.0
+
+            # Extra bonus for reaching top row (can reach goal!)
+            if row == 0:
+                intermediate_reward += 2.0
 
             self.building_grid[row, col, 0] = order
             self.piece_count += 1
@@ -248,6 +265,11 @@ class BoardBuilderEnv(gym.Env):
                 if piece_order >= order:
                     # Piece order should be LESS than trap order (piece placed first)
                     return self._finish_board_and_play(invalid_penalty=-10.0)
+                # Supermove bonus
+                intermediate_reward += 0.5
+            else:
+                # Regular trap placement
+                intermediate_reward += 0.3
 
             self.building_grid[row, col, 1] = order
             self.trap_count += 1
@@ -256,9 +278,6 @@ class BoardBuilderEnv(gym.Env):
             })
 
         self.construction_step += 1
-
-        # Intermediate reward for valid placement
-        intermediate_reward = 0.1
 
         observation = self._get_observation()
         info = self._get_info()
@@ -329,6 +348,9 @@ class BoardBuilderEnv(gym.Env):
             info["invalid_board"] = True
             return observation, reward, True, False, info
 
+        # Valid board bonus!
+        valid_board_bonus = 10.0
+
         # Get opponent's board
         if self.show_opponent_board and self.current_opponent_board is not None:
             opponent_board = self.current_opponent_board
@@ -349,7 +371,7 @@ class BoardBuilderEnv(gym.Env):
         self.opponent_total_score += result.opponentPoints
 
         # Calculate reward (score differential for this round)
-        round_reward = float(result.playerPoints - result.opponentPoints) + invalid_penalty
+        round_reward = float(result.playerPoints - result.opponentPoints) + invalid_penalty + valid_board_bonus
 
         # Check if episode is done
         terminated = (self.current_round >= 5)
