@@ -41,8 +41,14 @@ from .simulation import (
 from .gym_env import SpacesGameEnv
 from .construction_env import BoardConstructionEnv
 from .builder_env import BoardBuilderEnv
-from .modifier_env import BoardModifierEnv
 from .reverse_builder_env import ReverseCurriculumBuilderEnv
+
+# Optional: BoardModifierEnv (Stage 1.5 - experimental)
+try:
+    from .modifier_env import BoardModifierEnv
+    _has_modifier = True
+except ImportError:
+    _has_modifier = False
 
 __all__ = [
     "__version__",
@@ -69,6 +75,9 @@ __all__ = [
     "SpacesGameEnv",
     "BoardConstructionEnv",
     "BoardBuilderEnv",
-    "BoardModifierEnv",
     "ReverseCurriculumBuilderEnv",
 ]
+
+# Add BoardModifierEnv to exports if available
+if _has_modifier:
+    __all__.append("BoardModifierEnv")
