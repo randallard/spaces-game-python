@@ -189,11 +189,13 @@ def inspect_during_game():
     print(f"Round 1 reward: {reward}")
 
     print("\n→ Agent now knows:")
-    print(f"  - We played board 0 (history shows [0, -1, -1, -1, -1])")
-    print(f"  - Opponent played board 1 (history shows [1, -1, -1, -1, -1])")
+    print(f"  - We played board 0 in round 1 (history shows [0, -1, -1, -1, -1])")
+    print(f"  - Opponent played board 1 in round 1 (history shows [1, -1, -1, -1, -1])")
     print(f"  - Current score differential: {obs['score_diff'][0]}")
-    print(f"  - Opponent has boards [0,2,3,4,5,6,7] remaining")
-    print(f"  - Opponent's full remaining decks still visible in opponent_deck tensor")
+    print(f"  - In CURRENT MODE (deck selection): Boards cannot be reused")
+    print(f"    → Opponent has boards [0,2,3,4,5,6,7] available for round 2")
+    print(f"  - Opponent's full deck is still visible in opponent_deck tensor")
+    print(f"  - NOTE: Real game allows board reuse, but this mode simulates deck management")
 
 
 def main():
