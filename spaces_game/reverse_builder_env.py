@@ -282,6 +282,30 @@ class ReverseCurriculumBuilderEnv(gym.Env):
 
         return grid
 
+    def _get_last_move_column(self) -> int:
+        """Get the column of the last move (for final move positioning)."""
+        # Check placed moves first
+        if self.placed_moves:
+            for move in reversed(self.placed_moves):
+                if move["type"] != "final":
+                    return move["col"]
+
+        # Check building grid for last piece/trap
+        max_order = 0
+        last_col = 0
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                piece_order = self.building_grid[row, col, 0]
+                trap_order = self.building_grid[row, col, 1]
+                if piece_order > max_order:
+                    max_order = piece_order
+                    last_col = col
+                if trap_order > max_order:
+                    max_order = trap_order
+                    last_col = col
+
+        return last_col
+
     def _get_valid_cells_mask(self) -> np.ndarray:
         """Get mask of valid placement cells."""
         # For now, all cells valid (validation happens in step)
@@ -371,10 +395,12 @@ class ReverseCurriculumBuilderEnv(gym.Env):
 
             # Record the move
             if move_type == "final":
-                # Final move has no physical position
+                # Final move position: row=-1, col=last move's column
+                # Need to find the last non-final move's column
+                last_col = self._get_last_move_column()
                 self.placed_moves.append({
                     "row": -1,
-                    "col": -1,
+                    "col": last_col,
                     "type": move_type,
                     "order": order,
                 })
