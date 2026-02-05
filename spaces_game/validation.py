@@ -82,6 +82,14 @@ def is_board_playable(board: Board) -> bool:
             # Supermove constraint: piece must move before reaching goal
             if supermove_position is not None:
                 return False  # Cannot reach goal right after supermove without moving
+            # Piece must have reached the top row (row 0) to cross the goal line
+            if current_position is None:
+                return False  # No piece placed before goal
+            if current_position.row != 0:
+                return False  # Piece must be at row 0 to reach goal at row -1
+            # Goal column must match piece column (adjacent move up)
+            if current_position.col != col:
+                return False  # Goal must be directly above piece
             continue  # Don't check grid content for final moves
 
         # Check bounds (dynamic grid size)

@@ -39,6 +39,7 @@ setup(
         ],
         "rl": [
             "stable-baselines3>=2.0.0",
+            "sb3-contrib>=2.0.0",
             "tensorboard>=2.14.0",
         ],
     },

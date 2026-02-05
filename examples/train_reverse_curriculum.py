@@ -1,7 +1,7 @@
 """
 Train an agent for reverse curriculum board building (Stage 2).
 
-The agent learns to build boards backward (goal → start) while leveraging
+The agent learns to build boards backward (goal -> start) while leveraging
 Stage 1's frozen policy for base board selection. Training progresses through
 curriculum phases:
   - Phase 0: Place goal only (trivial)
@@ -11,7 +11,8 @@ curriculum phases:
   - Phase N: Full construction from scratch (hard)
 
 The curriculum advances automatically when the agent achieves 80%+ win rate
-on the current phase.
+on the current phase. Uses MaskablePPO with action masking to ensure only
+valid board placements are attempted.
 
 Usage:
     python examples/train_reverse_curriculum.py
@@ -27,8 +28,10 @@ import json
 import numpy as np
 from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
+from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 import gymnasium as gym
@@ -36,20 +39,30 @@ import gymnasium as gym
 from spaces_game import ReverseCurriculumBuilderEnv
 
 
+def mask_fn(env: gym.Env) -> np.ndarray:
+    """Get action masks from the environment."""
+    return env.action_masks()
+
+
 class PhaseProgressionCallback(BaseCallback):
     """
     Callback to automatically advance curriculum phase based on win rate.
 
-    Evaluates agent performance every N episodes and advances to next phase
-    when win rate exceeds threshold (default 80%).
+    Evaluates agent performance every N steps using a dedicated single
+    environment (not the training vectorized env) for accurate metrics.
+    Advances to next phase when win rate exceeds threshold (default 80%).
     """
 
     def __init__(
         self,
         eval_freq: int = 1000,
-        eval_episodes: int = 10,  # Reduced from 20 for faster evaluation
-        win_rate_threshold: float = 0.80,
+        eval_episodes: int = 20,
+        win_rate_threshold: float = 0.65,
         max_phase: int = 10,
+        board_size: int = 2,
+        board_library_path: str = "new_boards_2.json",
+        stage1_model_path: Optional[str] = None,
+        eval_callback_env: Optional[DummyVecEnv] = None,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -58,12 +71,21 @@ class PhaseProgressionCallback(BaseCallback):
         self.win_rate_threshold = win_rate_threshold
         self.max_phase = max_phase
         self.current_phase = 0
-        self.episode_count = 0
         self.phase_history = []
+        self.eval_callback_env = eval_callback_env
+
+        # Dedicated single env for accurate phase evaluation
+        self._eval_env = ReverseCurriculumBuilderEnv(
+            board_size=board_size,
+            board_library_path=board_library_path,
+            stage1_model_path=stage1_model_path,
+            curriculum_phase=0,
+            opponent_strategy="random",
+            show_opponent_board=True,
+        )
 
     def _on_step(self) -> bool:
         """Called after every step."""
-        # Check if we should evaluate
         if self.n_calls % self.eval_freq == 0:
             self._evaluate_and_maybe_advance()
         return True
@@ -72,63 +94,44 @@ class PhaseProgressionCallback(BaseCallback):
         """Evaluate current phase performance and advance if ready."""
         if self.verbose >= 1:
             print(f"\n{'='*70}")
-            print(f"PHASE {self.current_phase} EVALUATION")
+            print(f"PHASE {self.current_phase} EVALUATION ({self.eval_episodes} episodes)")
             print(f"{'='*70}")
 
-        # Run evaluation episodes
         wins = 0
+        ties = 0
         valid_boards = 0
         total_reward = 0.0
 
         for ep in range(self.eval_episodes):
-            obs = self.training_env.reset()
+            obs, info = self._eval_env.reset(seed=42 + ep)
             done = False
             episode_reward = 0.0
 
             while not done:
-                action, _states = self.model.predict(obs, deterministic=True)
-                # stable-baselines3 vectorized envs use old 4-value API
-                step_result = self.training_env.step(action)
-
-                if len(step_result) == 5:
-                    # New Gymnasium API: obs, reward, terminated, truncated, info
-                    obs, reward, terminated, truncated, info = step_result
-                    done = terminated or truncated
-                else:
-                    # Old Gym API: obs, reward, done, info
-                    obs, reward, done, info = step_result
-
-                # Handle vectorized env outputs
-                if isinstance(done, np.ndarray):
-                    done = done.any()  # Episode done if any env is done
-                if isinstance(reward, np.ndarray):
-                    episode_reward += reward[0]
-                else:
-                    episode_reward += reward
-
-            # Extract info from vectorized env
-            if isinstance(info, list):
-                info = info[0]
-            elif isinstance(info, tuple):
-                # In case info is still wrapped in a tuple
-                info = info[0] if len(info) > 0 else {}
-
-            # Ensure info is a dict
-            if not isinstance(info, dict):
-                if self.verbose >= 1:
-                    print(f"  Warning: info is {type(info)}, expected dict. Skipping episode.")
-                continue
+                action_masks = self._eval_env.action_masks()
+                action, _states = self.model.predict(
+                    obs, deterministic=True, action_masks=action_masks
+                )
+                obs, reward, terminated, truncated, info = self._eval_env.step(action)
+                episode_reward += reward
+                done = terminated or truncated
 
             if info.get('valid_board', False):
                 valid_boards += 1
-                if info.get('agent_score', 0) > info.get('opponent_score', 0):
+                agent_score = info.get('agent_score', 0)
+                opponent_score = info.get('opponent_score', 0)
+                if agent_score > opponent_score:
                     wins += 1
+                elif agent_score == opponent_score:
+                    ties += 1
 
             total_reward += episode_reward
 
         # Calculate metrics
         win_rate = wins / self.eval_episodes
         valid_rate = valid_boards / self.eval_episodes
+        # Non-loss rate: wins + ties among valid boards (accounts for tie-only boards)
+        non_loss_rate = (wins + ties) / self.eval_episodes if self.eval_episodes > 0 else 0
         avg_reward = total_reward / self.eval_episodes
 
         # Log metrics
@@ -142,29 +145,39 @@ class PhaseProgressionCallback(BaseCallback):
             print(f"  Valid rate: {valid_rate:.1%} ({valid_boards}/{self.eval_episodes})")
             print(f"  Avg reward: {avg_reward:.2f}")
 
-        # Check if ready to advance
-        if win_rate >= self.win_rate_threshold and self.current_phase < self.max_phase:
+        # Advance when win rate >= 65% AND valid rate >= 80%
+        # Win rate threshold accounts for ~25% tie-only boards (2/8 size-2 boards)
+        # 65% win rate = winning ~87% of beatable games
+        if (win_rate >= self.win_rate_threshold and
+            valid_rate >= 0.80 and
+            self.current_phase < self.max_phase):
             self.current_phase += 1
 
-            # Update all environments to new phase
-            for env_idx in range(self.training_env.num_envs):
+            # Update training environments (works for both SubprocVecEnv and DummyVecEnv)
+            try:
+                self.training_env.env_method("set_curriculum_phase", self.current_phase)
+            except Exception as e:
+                if self.verbose >= 1:
+                    print(f"  Warning: Could not update training envs: {e}")
+
+            # Update dedicated eval env
+            self._eval_env.set_curriculum_phase(self.current_phase)
+
+            # Update EvalCallback's eval env so best_model reflects current phase
+            if self.eval_callback_env is not None:
                 try:
-                    # Access the underlying environment
-                    base_env = self.training_env.envs[env_idx]
-                    while hasattr(base_env, 'env'):
-                        base_env = base_env.env
-                    base_env.curriculum_phase = self.current_phase
+                    self.eval_callback_env.env_method("set_curriculum_phase", self.current_phase)
                 except Exception as e:
                     if self.verbose >= 1:
-                        print(f"  Warning: Could not update env {env_idx}: {e}")
+                        print(f"  Warning: Could not update eval env: {e}")
 
             # Save phase checkpoint
             phase_model_path = f"models/reverse_curriculum/phase_{self.current_phase-1}_checkpoint.zip"
             self.model.save(phase_model_path)
 
             if self.verbose >= 1:
-                print(f"\n  🎯 PHASE ADVANCED: {self.current_phase-1} → {self.current_phase}")
-                print(f"  💾 Checkpoint saved: {phase_model_path}")
+                print(f"\n  PHASE ADVANCED: {self.current_phase-1} -> {self.current_phase}")
+                print(f"  Checkpoint saved: {phase_model_path}")
 
         # Record phase history
         self.phase_history.append({
@@ -185,22 +198,11 @@ class PhaseProgressionCallback(BaseCallback):
             json.dump(self.phase_history, f, indent=2)
 
         if self.verbose >= 1:
-            print(f"\n📊 Phase history saved to: {history_path}")
+            print(f"\nPhase history saved to: {history_path}")
 
 
 def make_env(rank: int, seed: int = 0, start_phase: int = 0, stage1_model_path: Optional[str] = None):
-    """
-    Create a single environment instance.
-
-    Args:
-        rank: Environment index (for parallel training)
-        seed: Random seed offset
-        start_phase: Starting curriculum phase
-        stage1_model_path: Path to Stage 1 model for base board selection
-
-    Returns:
-        Function that creates the environment
-    """
+    """Create a single environment instance with action masking."""
     def _init():
         env = ReverseCurriculumBuilderEnv(
             board_size=2,
@@ -211,8 +213,8 @@ def make_env(rank: int, seed: int = 0, start_phase: int = 0, stage1_model_path: 
             show_opponent_board=True,
             max_construction_steps=20,
         )
-
         env.reset(seed=seed + rank)
+        env = ActionMasker(env, mask_fn)
         env = Monitor(env)
         return env
     return _init
@@ -226,19 +228,9 @@ def train(
     save_freq: int = 10_000,
     stage1_model_path: str = "models/construction/best/best_model.zip",
 ):
-    """
-    Train PPO agent for reverse curriculum board building.
-
-    Args:
-        total_timesteps: Total training steps
-        n_envs: Number of parallel environments
-        start_phase: Starting curriculum phase (0 = easiest)
-        eval_freq: Phase evaluation frequency (timesteps)
-        save_freq: Checkpoint save frequency (timesteps)
-        stage1_model_path: Path to Stage 1 model for base board selection
-    """
+    """Train MaskablePPO agent for reverse curriculum board building."""
     print("=" * 70)
-    print("REVERSE CURRICULUM BOARD BUILDING (Stage 2)")
+    print("REVERSE CURRICULUM BOARD BUILDING (Stage 2) - MaskablePPO")
     print("=" * 70)
     print(f"Total timesteps:   {total_timesteps:,}")
     print(f"Parallel envs:     {n_envs}")
@@ -249,17 +241,18 @@ def train(
 
     # Check if Stage 1 model exists
     if not Path(stage1_model_path).exists():
-        print(f"\n⚠️  WARNING: Stage 1 model not found: {stage1_model_path}")
+        print(f"\nWARNING: Stage 1 model not found: {stage1_model_path}")
         print("   Will use random base board selection (suboptimal)")
         stage1_model_path = None
     else:
-        print(f"   ✓ Stage 1 model will be loaded in each environment")
+        print(f"   Stage 1 model will be loaded in each environment")
 
     print(f"\nCurriculum Strategy:")
     print(f"  - Phase 0: Place goal only (1 move)")
     print(f"  - Phase 1: Place last move + goal (2 moves)")
     print(f"  - Phase N: Place last N moves + goal")
     print(f"  - Auto-advance at 80%+ win rate")
+    print(f"  - Action masking enforces valid placements")
     print("=" * 70)
 
     # Create directories
@@ -270,20 +263,31 @@ def train(
     # Create vectorized training environment
     print("\nCreating training environments...")
     if n_envs > 1:
-        env = SubprocVecEnv([make_env(i, start_phase=start_phase, stage1_model_path=stage1_model_path) for i in range(n_envs)])
+        env = SubprocVecEnv([
+            make_env(i, start_phase=start_phase, stage1_model_path=stage1_model_path)
+            for i in range(n_envs)
+        ])
     else:
-        env = DummyVecEnv([make_env(0, start_phase=start_phase, stage1_model_path=stage1_model_path)])
+        env = DummyVecEnv([
+            make_env(0, start_phase=start_phase, stage1_model_path=stage1_model_path)
+        ])
 
     # Create evaluation environment (single, deterministic)
     print("Creating evaluation environment...")
-    eval_env = DummyVecEnv([make_env(rank=1000, seed=42, start_phase=start_phase, stage1_model_path=stage1_model_path)])
+    eval_env = DummyVecEnv([
+        make_env(rank=1000, seed=42, start_phase=start_phase, stage1_model_path=stage1_model_path)
+    ])
 
     # Callbacks
     phase_callback = PhaseProgressionCallback(
         eval_freq=eval_freq,
-        eval_episodes=10,  # Reduced for faster evaluation
-        win_rate_threshold=0.80,
+        eval_episodes=20,
+        win_rate_threshold=0.65,
         max_phase=10,
+        board_size=2,
+        board_library_path="new_boards_2.json",
+        stage1_model_path=stage1_model_path,
+        eval_callback_env=eval_env,
         verbose=1,
     )
 
@@ -295,7 +299,7 @@ def train(
         save_vecnormalize=True,
     )
 
-    eval_callback = EvalCallback(
+    eval_callback = MaskableEvalCallback(
         eval_env,
         best_model_save_path="models/reverse_curriculum/best",
         log_path="eval/reverse_curriculum",
@@ -305,9 +309,9 @@ def train(
         render=False,
     )
 
-    # Create PPO agent
-    print("\nInitializing PPO agent...")
-    model = PPO(
+    # Create MaskablePPO agent
+    print("\nInitializing MaskablePPO agent...")
+    model = MaskablePPO(
         "MultiInputPolicy",
         env,
         verbose=1,
@@ -319,7 +323,7 @@ def train(
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.02,  # Higher exploration for construction
+        ent_coef=0.05,
     )
 
     # Train

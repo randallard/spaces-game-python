@@ -14,9 +14,20 @@ import sys
 import json
 import numpy as np
 from pathlib import Path
-from stable_baselines3 import PPO
 
 from spaces_game import ReverseCurriculumBuilderEnv
+
+
+def _load_model(model_path: str):
+    """Load model, trying MaskablePPO first then falling back to PPO."""
+    try:
+        from sb3_contrib import MaskablePPO
+        model = MaskablePPO.load(model_path)
+        return model, True  # (model, uses_action_masks)
+    except Exception:
+        pass
+    from stable_baselines3 import PPO
+    return PPO.load(model_path), False
 
 
 def evaluate_phase(
@@ -42,7 +53,7 @@ def evaluate_phase(
         dict with evaluation metrics
     """
     # Load trained model
-    model = PPO.load(model_path)
+    model, uses_masks = _load_model(model_path)
 
     # Create evaluation environment
     env = ReverseCurriculumBuilderEnv(
@@ -77,7 +88,11 @@ def evaluate_phase(
 
         while not done:
             # Agent selects action using trained policy
-            action, _states = model.predict(obs, deterministic=True)
+            if uses_masks:
+                action_masks = env.action_masks()
+                action, _states = model.predict(obs, deterministic=True, action_masks=action_masks)
+            else:
+                action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
             episode_reward += reward
 
@@ -263,6 +278,7 @@ def compare_with_stage1(
     print("=" * 70)
 
     from spaces_game import BoardConstructionEnv
+    from stable_baselines3 import PPO
 
     # Evaluate Stage 1 (direct selection)
     print("\n[1] Evaluating Stage 1 (Direct Board Selection)...")
