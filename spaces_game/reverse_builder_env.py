@@ -533,22 +533,20 @@ class ReverseCurriculumBuilderEnv(gym.Env):
                 order=len(all_moves) + 1
             ))
 
-        # Build string grid
-        str_grid = [["." for _ in range(self.board_size)] for _ in range(self.board_size)]
+        # Build string grid (use validation-compatible values)
+        str_grid = [["empty" for _ in range(self.board_size)] for _ in range(self.board_size)]
         for move in all_moves:
             if move.type == "final":
                 continue
             row, col = move.position.row, move.position.col
             if move.type == "piece":
-                if str_grid[row][col] == "T":
-                    str_grid[row][col] = "B"
+                if str_grid[row][col] == "trap":
+                    # Trap overrides piece waypoint
+                    pass  # Keep as "trap"
                 else:
-                    str_grid[row][col] = "P"
+                    str_grid[row][col] = "piece"
             elif move.type == "trap":
-                if str_grid[row][col] == "P":
-                    str_grid[row][col] = "B"
-                else:
-                    str_grid[row][col] = "T"
+                str_grid[row][col] = "trap"
 
         return Board(
             boardSize=self.board_size,
