@@ -515,7 +515,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
         for move in self.placed_moves:
             if move["type"] == "final":
                 all_moves.append(BoardMove(
-                    position=Position(row=-1, col=-1),
+                    position=Position(row=move["row"], col=move["col"]),
                     type="final",
                     order=move["order"]
                 ))
@@ -525,8 +525,10 @@ class ReverseCurriculumBuilderEnv(gym.Env):
 
         # Ensure final is last
         if not any(m.type == "final" for m in all_moves):
+            # Get the column of the last move for the final move position
+            last_col = self._get_last_move_column()
             all_moves.append(BoardMove(
-                position=Position(row=-1, col=-1),
+                position=Position(row=-1, col=last_col),
                 type="final",
                 order=len(all_moves) + 1
             ))
