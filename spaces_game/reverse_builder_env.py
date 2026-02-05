@@ -438,7 +438,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
                     self.current_round,
                     agent_board,
                     self.opponent_board,
-                    size=self.board_size,
+                    silent=True,
                 )
 
                 agent_score = result.playerPoints
