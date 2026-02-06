@@ -15,12 +15,13 @@ on the current phase. Uses MaskablePPO with action masking to ensure only
 valid board placements are attempted.
 
 Usage:
-    python examples/train_reverse_curriculum.py
-    python examples/train_reverse_curriculum.py --start-phase 0 --timesteps 200000
+    python examples/train_reverse_curriculum.py --size 2
+    python examples/train_reverse_curriculum.py --size 3 --timesteps 500000
+    python examples/train_reverse_curriculum.py --size 3 --resume models/size3/stage2/ppo_stage2_final.zip
 
-Training will save checkpoints to models/reverse_curriculum/ and log to
-tensorboard. Monitor progress with:
-    tensorboard --logdir logs/reverse_curriculum/
+Training will save checkpoints to models/size{N}/stage2/ and log to tensorboard.
+Monitor progress with:
+    tensorboard --logdir logs/size{N}_stage2/
 """
 
 import os
@@ -63,6 +64,7 @@ class PhaseProgressionCallback(BaseCallback):
         board_library_path: str = "new_boards_2.json",
         stage1_model_path: Optional[str] = None,
         eval_callback_env: Optional[DummyVecEnv] = None,
+        output_dir: str = "models/reverse_curriculum",
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -73,6 +75,7 @@ class PhaseProgressionCallback(BaseCallback):
         self.current_phase = 0
         self.phase_history = []
         self.eval_callback_env = eval_callback_env
+        self.output_dir = output_dir
 
         # Dedicated single env for accurate phase evaluation
         self._eval_env = ReverseCurriculumBuilderEnv(
@@ -172,7 +175,7 @@ class PhaseProgressionCallback(BaseCallback):
                         print(f"  Warning: Could not update eval env: {e}")
 
             # Save phase checkpoint
-            phase_model_path = f"models/reverse_curriculum/phase_{self.current_phase-1}_checkpoint.zip"
+            phase_model_path = f"{self.output_dir}/phase_{self.current_phase-1}_checkpoint.zip"
             self.model.save(phase_model_path)
 
             if self.verbose >= 1:
@@ -193,7 +196,7 @@ class PhaseProgressionCallback(BaseCallback):
 
     def _on_training_end(self) -> None:
         """Save phase progression history."""
-        history_path = "models/reverse_curriculum/phase_history.json"
+        history_path = f"{self.output_dir}/phase_history.json"
         with open(history_path, 'w') as f:
             json.dump(self.phase_history, f, indent=2)
 
@@ -201,17 +204,25 @@ class PhaseProgressionCallback(BaseCallback):
             print(f"\nPhase history saved to: {history_path}")
 
 
-def make_env(rank: int, seed: int = 0, start_phase: int = 0, stage1_model_path: Optional[str] = None):
+def make_env(
+    rank: int,
+    seed: int = 0,
+    start_phase: int = 0,
+    board_size: int = 2,
+    board_library_path: str = "new_boards_2.json",
+    stage1_model_path: Optional[str] = None,
+    max_construction_steps: int = 20,
+):
     """Create a single environment instance with action masking."""
     def _init():
         env = ReverseCurriculumBuilderEnv(
-            board_size=2,
-            board_library_path="new_boards_2.json",
+            board_size=board_size,
+            board_library_path=board_library_path,
             stage1_model_path=stage1_model_path,
             curriculum_phase=start_phase,
             opponent_strategy="random",
             show_opponent_board=True,
-            max_construction_steps=20,
+            max_construction_steps=max_construction_steps,
         )
         env.reset(seed=seed + rank)
         env = ActionMasker(env, mask_fn)
@@ -221,26 +232,48 @@ def make_env(rank: int, seed: int = 0, start_phase: int = 0, stage1_model_path: 
 
 
 def train(
+    board_size: int = 2,
     total_timesteps: int = 200_000,
     n_envs: int = 4,
     start_phase: int = 0,
     eval_freq: int = 1000,
     save_freq: int = 10_000,
-    stage1_model_path: str = "models/construction/best/best_model.zip",
+    stage1_model_path: Optional[str] = None,
     resume_from: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    board_library_path: Optional[str] = None,
 ):
     """Train MaskablePPO agent for reverse curriculum board building."""
+    # Derive defaults based on board size
+    if board_library_path is None:
+        board_library_path = f"new_boards_{board_size}.json"
+    if output_dir is None:
+        output_dir = f"models/size{board_size}/stage2"
+    if stage1_model_path is None:
+        stage1_model_path = f"models/size{board_size}/stage1/best/best_model.zip"
+    max_construction_steps = board_size * 10  # 20 for size 2, 30 for size 3, etc.
+
     print("=" * 70)
     print("REVERSE CURRICULUM BOARD BUILDING (Stage 2) - MaskablePPO")
     print("=" * 70)
+    print(f"Board size:        {board_size}x{board_size}")
+    print(f"Board library:     {board_library_path}")
     print(f"Total timesteps:   {total_timesteps:,}")
     print(f"Parallel envs:     {n_envs}")
     print(f"Starting phase:    {start_phase}")
     print(f"Eval frequency:    {eval_freq:,} steps")
     print(f"Save frequency:    {save_freq:,} steps")
+    print(f"Max steps/episode: {max_construction_steps}")
     print(f"Stage 1 model:     {stage1_model_path}")
+    print(f"Output directory:  {output_dir}")
     if resume_from:
         print(f"Resuming from:     {resume_from}")
+
+    # Check if board library exists
+    if not Path(board_library_path).exists():
+        print(f"\nERROR: Board library not found: {board_library_path}")
+        print(f"  Create it with curated size-{board_size} boards before training.")
+        return
 
     # Check if Stage 1 model exists
     if not Path(stage1_model_path).exists():
@@ -259,26 +292,37 @@ def train(
     print("=" * 70)
 
     # Create directories
-    os.makedirs("models/reverse_curriculum", exist_ok=True)
-    os.makedirs("logs/reverse_curriculum", exist_ok=True)
-    os.makedirs("eval/reverse_curriculum", exist_ok=True)
+    log_dir = f"logs/size{board_size}_stage2"
+    eval_dir = f"eval/size{board_size}_stage2"
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(eval_dir, exist_ok=True)
+
+    # Common env kwargs
+    env_kwargs = dict(
+        start_phase=start_phase,
+        board_size=board_size,
+        board_library_path=board_library_path,
+        stage1_model_path=stage1_model_path,
+        max_construction_steps=max_construction_steps,
+    )
 
     # Create vectorized training environment
     print("\nCreating training environments...")
     if n_envs > 1:
         env = SubprocVecEnv([
-            make_env(i, start_phase=start_phase, stage1_model_path=stage1_model_path)
+            make_env(i, **env_kwargs)
             for i in range(n_envs)
         ])
     else:
         env = DummyVecEnv([
-            make_env(0, start_phase=start_phase, stage1_model_path=stage1_model_path)
+            make_env(0, **env_kwargs)
         ])
 
     # Create evaluation environment (single, deterministic)
     print("Creating evaluation environment...")
     eval_env = DummyVecEnv([
-        make_env(rank=1000, seed=42, start_phase=start_phase, stage1_model_path=stage1_model_path)
+        make_env(rank=1000, seed=42, **env_kwargs)
     ])
 
     # Callbacks
@@ -287,25 +331,26 @@ def train(
         eval_episodes=20,
         win_rate_threshold=0.65,
         max_phase=10,
-        board_size=2,
-        board_library_path="new_boards_2.json",
+        board_size=board_size,
+        board_library_path=board_library_path,
         stage1_model_path=stage1_model_path,
         eval_callback_env=eval_env,
+        output_dir=output_dir,
         verbose=1,
     )
 
     checkpoint_callback = CheckpointCallback(
         save_freq=save_freq // n_envs,
-        save_path="models/reverse_curriculum",
-        name_prefix="ppo_reverse_curriculum",
+        save_path=output_dir,
+        name_prefix="ppo_stage2",
         save_replay_buffer=False,
         save_vecnormalize=True,
     )
 
     eval_callback = MaskableEvalCallback(
         eval_env,
-        best_model_save_path="models/reverse_curriculum/best",
-        log_path="eval/reverse_curriculum",
+        best_model_save_path=f"{output_dir}/best",
+        log_path=eval_dir,
         eval_freq=eval_freq // n_envs,
         n_eval_episodes=10,
         deterministic=True,
@@ -325,7 +370,7 @@ def train(
             "MultiInputPolicy",
             env,
             verbose=1,
-            tensorboard_log="logs/reverse_curriculum",
+            tensorboard_log=log_dir,
             learning_rate=3e-4,
             n_steps=2048 // n_envs,
             batch_size=64,
@@ -338,7 +383,7 @@ def train(
 
     # Train
     print("\nStarting training...")
-    print("Monitor progress with: tensorboard --logdir logs/reverse_curriculum/")
+    print(f"Monitor progress with: tensorboard --logdir {log_dir}/")
     print("=" * 70)
 
     model.learn(
@@ -348,17 +393,17 @@ def train(
     )
 
     # Save final model
-    final_path = "models/reverse_curriculum/ppo_reverse_curriculum_final.zip"
+    final_path = f"{output_dir}/ppo_stage2_final.zip"
     model.save(final_path)
 
     print("\n" + "=" * 70)
     print("TRAINING COMPLETE!")
     print("=" * 70)
     print(f"Final model saved to: {final_path}")
-    print(f"Best model saved to: models/reverse_curriculum/best/best_model.zip")
+    print(f"Best model saved to: {output_dir}/best/best_model.zip")
     print(f"Final phase reached: {phase_callback.current_phase}")
-    print(f"\nPhase checkpoints saved in: models/reverse_curriculum/")
-    print(f"Phase history saved to: models/reverse_curriculum/phase_history.json")
+    print(f"\nPhase checkpoints saved in: {output_dir}/")
+    print(f"Phase history saved to: {output_dir}/phase_history.json")
     print("=" * 70)
 
     env.close()
@@ -369,6 +414,12 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Train reverse curriculum board builder")
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=2,
+        help="Board size (default: 2)",
+    )
     parser.add_argument(
         "--timesteps",
         type=int,
@@ -402,19 +453,32 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage1-model",
         type=str,
-        default="models/construction/best/best_model.zip",
-        help="Path to Stage 1 model (default: models/construction/best/best_model.zip)",
+        default=None,
+        help="Path to Stage 1 model (default: models/size{N}/stage1/best_model.zip)",
     )
     parser.add_argument(
         "--resume",
         type=str,
         default=None,
-        help="Resume training from existing model (e.g., models/reverse_curriculum/ppo_reverse_curriculum_final.zip)",
+        help="Resume training from existing model",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory (default: models/size{N}/stage2)",
+    )
+    parser.add_argument(
+        "--board-library",
+        type=str,
+        default=None,
+        help="Path to board library JSON (default: new_boards_{N}.json)",
     )
 
     args = parser.parse_args()
 
     train(
+        board_size=args.size,
         total_timesteps=args.timesteps,
         n_envs=args.envs,
         start_phase=args.start_phase,
@@ -422,4 +486,6 @@ if __name__ == "__main__":
         save_freq=args.save_freq,
         stage1_model_path=args.stage1_model,
         resume_from=args.resume,
+        output_dir=args.output_dir,
+        board_library_path=args.board_library,
     )

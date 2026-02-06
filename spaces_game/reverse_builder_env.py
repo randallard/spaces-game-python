@@ -642,7 +642,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             opponent_score = result.opponentPoints
             score_diff = agent_score - opponent_score
             # Heavy weight on actual game points scored
-            reward += float(score_diff) * 5.0
+            reward += float(score_diff) * 8.0
 
             if agent_score > opponent_score:
                 reward += 20.0

@@ -14,6 +14,7 @@ import os
 import random
 import re
 import sys
+from datetime import datetime
 import numpy as np
 from pathlib import Path
 from typing import Optional
@@ -40,11 +41,55 @@ def _load_agent(model_path: str):
     return PPO.load(model_path), False
 
 
+def _discover_training_runs(base_dir: str = "models") -> list:
+    """Scan for all directories containing model .zip files.
+
+    Returns list of dicts: {"path": str, "label": str, "model_count": int, "newest": float}
+    """
+    base = Path(base_dir)
+    if not base.exists():
+        return []
+
+    # Find all directories that directly contain .zip files
+    runs = {}
+    for zip_file in base.rglob("*.zip"):
+        parent = zip_file.parent
+        # Skip "best/" subdirectories - attribute those to parent
+        if parent.name == "best":
+            parent = parent.parent
+        key = str(parent)
+        if key not in runs:
+            runs[key] = {"path": key, "zips": [], "newest": 0.0}
+        runs[key]["zips"].append(zip_file)
+        mtime = zip_file.stat().st_mtime
+        if mtime > runs[key]["newest"]:
+            runs[key]["newest"] = mtime
+
+    # Build labeled results
+    results = []
+    for key, info in runs.items():
+        rel = os.path.relpath(info["path"], ".")
+        n_models = len(info["zips"])
+        date_str = datetime.fromtimestamp(info["newest"]).strftime("%Y-%m-%d %H:%M")
+        results.append({
+            "path": info["path"],
+            "label": rel,
+            "model_count": n_models,
+            "date": date_str,
+            "newest": info["newest"],
+        })
+
+    # Sort by most recent first
+    results.sort(key=lambda r: r["newest"], reverse=True)
+    return results
+
+
 def _discover_models(model_dir: str = "models/reverse_curriculum") -> dict:
     """Scan model directory and return available models organized by type."""
     result = {
         "best": None,
         "final": None,
+        "phase_checkpoints": {},  # phase -> path
         "step_checkpoints": {},  # steps -> path
     }
     model_path = Path(model_dir)
@@ -56,14 +101,21 @@ def _discover_models(model_dir: str = "models/reverse_curriculum") -> dict:
     if best.exists():
         result["best"] = str(best)
 
-    # Final model
-    final = model_path / "ppo_reverse_curriculum_final.zip"
-    if final.exists():
-        result["final"] = str(final)
+    # Final model - match any *_final.zip
+    for f in model_path.glob("*_final.zip"):
+        result["final"] = str(f)
+        break
 
-    # Step checkpoints
-    for f in model_path.glob("ppo_reverse_curriculum_*_steps.zip"):
-        m = re.match(r"ppo_reverse_curriculum_(\d+)_steps\.zip", f.name)
+    # Phase checkpoints
+    for f in model_path.glob("phase_*_checkpoint.zip"):
+        m = re.match(r"phase_(\d+)_checkpoint\.zip", f.name)
+        if m:
+            phase = int(m.group(1))
+            result["phase_checkpoints"][phase] = str(f)
+
+    # Step checkpoints - match any *_DIGITS_steps.zip pattern
+    for f in model_path.glob("*_steps.zip"):
+        m = re.search(r"_(\d+)_steps\.zip$", f.name)
         if m:
             steps = int(m.group(1))
             result["step_checkpoints"][steps] = str(f)
@@ -71,14 +123,63 @@ def _discover_models(model_dir: str = "models/reverse_curriculum") -> dict:
     return result
 
 
+def _select_training_run(base_dir: str = "models") -> Optional[str]:
+    """Interactive training run selection. Returns chosen directory path or None."""
+    runs = _discover_training_runs(base_dir)
+
+    if not runs:
+        click.echo(click.style(f"\n  No models found in {base_dir}/", fg="red"))
+        click.echo("  Train first with: python examples/train_reverse_curriculum.py")
+        return None
+
+    # If there's only one run, use it directly
+    if len(runs) == 1:
+        click.echo(f"\n  Using training: {click.style(runs[0]['label'], fg='cyan')}")
+        return runs[0]["path"]
+
+    click.echo(click.style("\n  Available training runs:", bold=True))
+    click.echo()
+    for i, run in enumerate(runs):
+        label = click.style(run["label"], fg="cyan")
+        click.echo(f"    {i:>2}) {label}  ({run['model_count']} models, latest {run['date']})")
+
+    click.echo()
+    try:
+        idx = click.prompt("  Select training run #", type=int, default=0)
+        if idx < 0 or idx >= len(runs):
+            click.echo(click.style("  Invalid selection.", fg="red"))
+            return None
+        return runs[idx]["path"]
+    except (ValueError, KeyboardInterrupt):
+        return None
+
+
 def _select_model(model_dir: str = "models/reverse_curriculum") -> Optional[str]:
-    """Interactive model selection menu. Returns chosen model path or None."""
+    """Interactive model selection menu. Returns chosen model path or None.
+
+    If model_dir is the default, first prompts user to pick a training run.
+    """
+    # If using default, let user pick a training run first
+    if model_dir == "models/reverse_curriculum":
+        chosen_dir = _select_training_run()
+        if chosen_dir is None:
+            return None
+        model_dir = chosen_dir
+
     discovered = _discover_models(model_dir)
 
-    if not discovered["best"] and not discovered["final"] and not discovered["step_checkpoints"]:
+    has_models = (
+        discovered["best"]
+        or discovered["final"]
+        or discovered["step_checkpoints"]
+        or discovered["phase_checkpoints"]
+    )
+    if not has_models:
         click.echo(click.style(f"\n  No models found in {model_dir}/", fg="red"))
         click.echo("  Train first with: python examples/train_reverse_curriculum.py")
         return None
+
+    dir_label = os.path.relpath(model_dir, ".")
 
     # Build menu options
     options = []
@@ -88,6 +189,12 @@ def _select_model(model_dir: str = "models/reverse_curriculum") -> Optional[str]
 
     if discovered["final"]:
         options.append({"label": "Final model (end of training)", "path": discovered["final"]})
+
+    # Phase checkpoints
+    phase_checkpoints = discovered["phase_checkpoints"]
+    if phase_checkpoints:
+        for phase in sorted(phase_checkpoints.keys()):
+            options.append({"label": f"Phase {phase} checkpoint", "path": phase_checkpoints[phase]})
 
     # Sample ~5 step checkpoints evenly distributed
     step_checkpoints = discovered["step_checkpoints"]
@@ -117,7 +224,7 @@ def _select_model(model_dir: str = "models/reverse_curriculum") -> Optional[str]
         if len(all_steps) > len(sampled_steps):
             options.append({"label": "Enter specific step count...", "path": "__custom__"})
 
-    click.echo(click.style("\n  Available agents:", bold=True))
+    click.echo(click.style(f"\n  Models in {dir_label}:", bold=True))
     click.echo()
     for i, opt in enumerate(options):
         click.echo(f"    {i:>2}) {opt['label']}")
