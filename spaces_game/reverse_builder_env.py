@@ -380,7 +380,13 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             type_mask[1] = 1 if has_valid_trap else 0
 
         # --- Done mask [continue, finish] ---
-        done_mask = np.array([1, 1], dtype=np.int8)  # allow both by default
+        # Only allow finish if piece is at row 0 (can reach goal)
+        can_finish = (
+            self.current_piece_position is not None
+            and self.current_piece_position.row == 0
+            and not self.supermove_active  # must move after supermove
+        )
+        done_mask = np.array([1, 1 if can_finish else 0], dtype=np.int8)
 
         return np.concatenate([cell_mask, type_mask, done_mask])
 
@@ -635,14 +641,15 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             agent_score = result.playerPoints
             opponent_score = result.opponentPoints
             score_diff = agent_score - opponent_score
-            reward += float(score_diff) * 2.0  # Amplify score differential
+            # Heavy weight on actual game points scored
+            reward += float(score_diff) * 5.0
 
             if agent_score > opponent_score:
-                reward += 25.0
+                reward += 20.0
             elif agent_score == opponent_score:
-                reward += 5.0
+                reward += 0.0  # Ties are not winning
             else:
-                reward += -15.0  # Losing must hurt
+                reward += -10.0
 
         self.agent_total_score += agent_score
         self.opponent_total_score += opponent_score

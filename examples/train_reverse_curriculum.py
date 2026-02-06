@@ -227,6 +227,7 @@ def train(
     eval_freq: int = 1000,
     save_freq: int = 10_000,
     stage1_model_path: str = "models/construction/best/best_model.zip",
+    resume_from: Optional[str] = None,
 ):
     """Train MaskablePPO agent for reverse curriculum board building."""
     print("=" * 70)
@@ -238,6 +239,8 @@ def train(
     print(f"Eval frequency:    {eval_freq:,} steps")
     print(f"Save frequency:    {save_freq:,} steps")
     print(f"Stage 1 model:     {stage1_model_path}")
+    if resume_from:
+        print(f"Resuming from:     {resume_from}")
 
     # Check if Stage 1 model exists
     if not Path(stage1_model_path).exists():
@@ -309,22 +312,29 @@ def train(
         render=False,
     )
 
-    # Create MaskablePPO agent
-    print("\nInitializing MaskablePPO agent...")
-    model = MaskablePPO(
-        "MultiInputPolicy",
-        env,
-        verbose=1,
-        tensorboard_log="logs/reverse_curriculum",
-        learning_rate=3e-4,
-        n_steps=2048 // n_envs,
-        batch_size=64,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.05,
-    )
+    # Create or load MaskablePPO agent
+    if resume_from and Path(resume_from).exists():
+        print(f"\nResuming from: {resume_from}")
+        model = MaskablePPO.load(resume_from, env=env)
+        # Update hyperparams for continued training
+        model.learning_rate = 3e-4
+        model.ent_coef = 0.05
+    else:
+        print("\nInitializing MaskablePPO agent...")
+        model = MaskablePPO(
+            "MultiInputPolicy",
+            env,
+            verbose=1,
+            tensorboard_log="logs/reverse_curriculum",
+            learning_rate=3e-4,
+            n_steps=2048 // n_envs,
+            batch_size=64,
+            n_epochs=10,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=0.2,
+            ent_coef=0.05,
+        )
 
     # Train
     print("\nStarting training...")
@@ -395,6 +405,12 @@ if __name__ == "__main__":
         default="models/construction/best/best_model.zip",
         help="Path to Stage 1 model (default: models/construction/best/best_model.zip)",
     )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Resume training from existing model (e.g., models/reverse_curriculum/ppo_reverse_curriculum_final.zip)",
+    )
 
     args = parser.parse_args()
 
@@ -405,4 +421,5 @@ if __name__ == "__main__":
         eval_freq=args.eval_freq,
         save_freq=args.save_freq,
         stage1_model_path=args.stage1_model,
+        resume_from=args.resume,
     )

@@ -7,9 +7,12 @@ and see who wins in simulation.
 Usage:
     python examples/play_against_agent.py
     python examples/play_against_agent.py --size 2
-    python examples/play_against_agent.py --model models/reverse_curriculum/ppo_reverse_curriculum_90000_steps.zip
+    python examples/play_against_agent.py --model models/reverse_curriculum/phase_3_checkpoint.zip
 """
 
+import os
+import random
+import re
 import sys
 import numpy as np
 from pathlib import Path
@@ -21,7 +24,9 @@ from spaces_game import ReverseCurriculumBuilderEnv, BoardConstructionEnv
 from spaces_game.interactive_builder import build_board_interactive, _render_board_state
 from spaces_game.board_loader import load_boards_from_json
 from spaces_game.simulation import simulate_round
+from spaces_game.validation import is_board_playable
 from spaces_game.types import Board
+from spaces_game.cli import _render_result_details, _render_board
 
 
 def _load_agent(model_path: str):
@@ -35,10 +40,123 @@ def _load_agent(model_path: str):
     return PPO.load(model_path), False
 
 
+def _discover_models(model_dir: str = "models/reverse_curriculum") -> dict:
+    """Scan model directory and return available models organized by type."""
+    result = {
+        "best": None,
+        "final": None,
+        "step_checkpoints": {},  # steps -> path
+    }
+    model_path = Path(model_dir)
+    if not model_path.exists():
+        return result
+
+    # Best model
+    best = model_path / "best" / "best_model.zip"
+    if best.exists():
+        result["best"] = str(best)
+
+    # Final model
+    final = model_path / "ppo_reverse_curriculum_final.zip"
+    if final.exists():
+        result["final"] = str(final)
+
+    # Step checkpoints
+    for f in model_path.glob("ppo_reverse_curriculum_*_steps.zip"):
+        m = re.match(r"ppo_reverse_curriculum_(\d+)_steps\.zip", f.name)
+        if m:
+            steps = int(m.group(1))
+            result["step_checkpoints"][steps] = str(f)
+
+    return result
+
+
+def _select_model(model_dir: str = "models/reverse_curriculum") -> Optional[str]:
+    """Interactive model selection menu. Returns chosen model path or None."""
+    discovered = _discover_models(model_dir)
+
+    if not discovered["best"] and not discovered["final"] and not discovered["step_checkpoints"]:
+        click.echo(click.style(f"\n  No models found in {model_dir}/", fg="red"))
+        click.echo("  Train first with: python examples/train_reverse_curriculum.py")
+        return None
+
+    # Build menu options
+    options = []
+
+    if discovered["best"]:
+        options.append({"label": "Best model (EvalCallback)", "path": discovered["best"]})
+
+    if discovered["final"]:
+        options.append({"label": "Final model (end of training)", "path": discovered["final"]})
+
+    # Sample ~5 step checkpoints evenly distributed
+    step_checkpoints = discovered["step_checkpoints"]
+    if step_checkpoints:
+        all_steps = sorted(step_checkpoints.keys())
+        max_steps = max(all_steps)
+
+        if len(all_steps) <= 5:
+            # Show all if 5 or fewer
+            sampled_steps = all_steps
+        else:
+            # Sample ~5 evenly spaced checkpoints
+            interval = max_steps // 5
+            target_steps = [interval * i for i in range(1, 6)]
+            sampled_steps = []
+            for target in target_steps:
+                # Find closest available step
+                closest = min(all_steps, key=lambda s: abs(s - target))
+                if closest not in sampled_steps:
+                    sampled_steps.append(closest)
+            sampled_steps.sort()
+
+        for steps in sampled_steps:
+            options.append({"label": f"{steps:,} steps", "path": step_checkpoints[steps]})
+
+        # Add "other" option if there are more checkpoints
+        if len(all_steps) > len(sampled_steps):
+            options.append({"label": "Enter specific step count...", "path": "__custom__"})
+
+    click.echo(click.style("\n  Available agents:", bold=True))
+    click.echo()
+    for i, opt in enumerate(options):
+        click.echo(f"    {i:>2}) {opt['label']}")
+
+    click.echo()
+    try:
+        idx = click.prompt("  Select agent #", type=int, default=0)
+        if idx < 0 or idx >= len(options):
+            click.echo(click.style("  Invalid selection.", fg="red"))
+            return None
+
+        selected = options[idx]
+
+        if selected["path"] == "__custom__":
+            # Let user enter specific step count
+            all_steps = sorted(step_checkpoints.keys())
+            click.echo(f"\n  Available steps: {', '.join(f'{s:,}' for s in all_steps)}")
+            try:
+                desired = click.prompt("  Enter step count", type=int)
+                if desired in step_checkpoints:
+                    return step_checkpoints[desired]
+                else:
+                    # Find closest
+                    closest = min(all_steps, key=lambda s: abs(s - desired))
+                    click.echo(f"  Step {desired:,} not found, using closest: {closest:,}")
+                    return step_checkpoints[closest]
+            except (ValueError, KeyboardInterrupt):
+                return None
+
+        return selected["path"]
+    except (ValueError, KeyboardInterrupt):
+        return None
+
+
 def _agent_build_board(
     player_board: Board,
     model,
     uses_masks: bool,
+    deterministic: bool = True,
     board_size: int = 2,
     board_library_path: str = "new_boards_2.json",
     stage1_model_path: str = "models/construction/best/best_model.zip",
@@ -55,16 +173,17 @@ def _agent_build_board(
 
     # Override the opponent board with the player's board
     env.opponent_board = player_board
-    obs, info = env.reset(seed=42)
+    seed = 42 if deterministic else random.randint(0, 100000)
+    obs, info = env.reset(seed=seed)
     env.opponent_board = player_board  # Re-set after reset
 
     done = False
     while not done:
         if uses_masks:
             action_masks = env.action_masks()
-            action, _ = model.predict(obs, deterministic=True, action_masks=action_masks)
+            action, _ = model.predict(obs, deterministic=deterministic, action_masks=action_masks)
         else:
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=deterministic)
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
@@ -74,52 +193,49 @@ def _agent_build_board(
 
 
 def _display_board_simple(board: Board, title: str):
-    """Display a board with a simple grid."""
-    click.echo(_render_board_state(board, current_position=None, title=title))
+    """Display a board with a simple grid using CLI's render function."""
+    click.echo(_render_board(board, title))
 
 
-def _display_result(player_board: Board, agent_board: Board, result):
-    """Display the simulation result."""
-    player_score = result.playerPoints
-    agent_score = result.opponentPoints
-
-    click.echo(click.style("\n" + "=" * 50, bold=True))
-    click.echo(click.style("  SIMULATION RESULT", bold=True))
-    click.echo(click.style("=" * 50, bold=True))
-
-    click.echo(f"\n  You:   {player_score} points")
-    click.echo(f"  Agent: {agent_score} points")
-
-    if player_score > agent_score:
-        click.echo(click.style(f"\n  YOU WIN! (+{player_score - agent_score})", fg="green", bold=True))
-    elif agent_score > player_score:
-        click.echo(click.style(f"\n  AGENT WINS! (+{agent_score - player_score})", fg="red", bold=True))
+def _validate_and_display(board: Board, label: str) -> bool:
+    """Validate a board and display result. Returns True if valid."""
+    is_valid = is_board_playable(board)
+    if is_valid:
+        click.echo(click.style(f"  {label} board: Valid", fg="green"))
     else:
-        click.echo(click.style("\n  TIE!", fg="yellow", bold=True))
-
-    click.echo(click.style("=" * 50 + "\n", bold=True))
+        click.echo(click.style(f"  {label} board: INVALID", fg="red", bold=True))
+    return is_valid
 
 
 def play(
     board_size: int = 2,
-    model_path: str = "models/reverse_curriculum/ppo_reverse_curriculum_90000_steps.zip",
+    model_path: Optional[str] = None,
     stage1_model_path: str = "models/construction/best/best_model.zip",
     board_library_path: str = "new_boards_2.json",
+    deterministic: bool = True,
 ):
     """Main play loop."""
     click.echo(click.style("\n" + "=" * 50, bold=True))
     click.echo(click.style("  SPACES GAME - Play vs Agent", bold=True))
     click.echo(click.style("=" * 50, bold=True))
     click.echo(f"\n  Board size: {board_size}x{board_size}")
-    click.echo(f"  Agent model: {model_path}")
+    mode_str = "Deterministic" if deterministic else "Stochastic"
+    mode_color = "cyan" if deterministic else "magenta"
+    toggle_flag = "--stochastic" if deterministic else "--deterministic"
+    click.echo(f"  Mode: {click.style(mode_str, fg=mode_color)} (use {toggle_flag} to change)")
 
-    # Load agent
-    if not Path(model_path).exists():
+    # Select model if not provided via --model
+    if model_path is None:
+        model_path = _select_model()
+        if model_path is None:
+            sys.exit(1)
+    elif not Path(model_path).exists():
         click.echo(click.style(f"\n  Model not found: {model_path}", fg="red"))
         click.echo("  Train first with: python examples/train_reverse_curriculum.py")
         sys.exit(1)
 
-    click.echo("\n  Loading agent model...")
+    click.echo(f"\n  Agent: {model_path}")
+    click.echo("  Loading agent model...")
     model, uses_masks = _load_agent(model_path)
     click.echo(click.style("  Agent loaded!", fg="green"))
 
@@ -132,6 +248,7 @@ def play(
         click.echo("\n  How do you want to play?")
         click.echo("    1) Build a board interactively")
         click.echo("    2) Pick a board from the library")
+        click.echo("    3) Switch agent")
         click.echo("    q) Quit")
 
         choice = click.prompt("\n  Choice", type=str, default="1")
@@ -139,6 +256,15 @@ def play(
         if choice.lower() in ("q", "quit"):
             click.echo("\nGoodbye!")
             break
+
+        if choice == "3":
+            new_path = _select_model()
+            if new_path is not None:
+                click.echo(f"\n  Loading {new_path}...")
+                model, uses_masks = _load_agent(new_path)
+                model_path = new_path
+                click.echo(click.style("  Agent switched!", fg="green"))
+            continue
 
         player_board = None
 
@@ -176,24 +302,35 @@ def play(
             click.echo("  Invalid choice.")
             continue
 
-        # Show player's board
-        _display_board_simple(player_board, "Your Board")
+        # Validate player's board
+        click.echo()
+        player_valid = _validate_and_display(player_board, "Your")
+        if not player_valid:
+            click.echo(click.style("  Cannot play with invalid board.", fg="red"))
+            continue
 
         # Agent builds counter-board
         click.echo(click.style("\n  Agent is building a counter-board...", fg="yellow"))
         agent_board = _agent_build_board(
             player_board, model, uses_masks,
+            deterministic=deterministic,
             board_size=board_size,
             board_library_path=board_library_path,
             stage1_model_path=stage1_model_path,
         )
 
-        # Show agent's board
-        _display_board_simple(agent_board, "Agent's Board")
+        # Validate agent's board
+        agent_valid = _validate_and_display(agent_board, "Agent")
 
-        # Simulate: player is "player", agent is "opponent"
-        result = simulate_round(0, player_board, agent_board, silent=True)
-        _display_result(player_board, agent_board, result)
+        if not agent_valid:
+            click.echo(click.style("\n  Agent produced an invalid board!", fg="red", bold=True))
+            click.echo("\n" + _render_board(agent_board, "Agent's Invalid Board"))
+            click.echo(click.style("\n  You win by default (agent failed to build valid board)", fg="green", bold=True))
+            continue
+
+        # Simulate using CLI's detailed output: player is "player", agent is "opponent"
+        result = simulate_round(1, player_board, agent_board, silent=True)
+        _render_result_details(result, fog_of_war=False)
 
         # Play again?
         again = click.prompt("  Play again?", type=str, default="y")
@@ -211,9 +348,8 @@ if __name__ == "__main__":
         help="Board size (default: 2)",
     )
     parser.add_argument(
-        "--model", type=str,
-        default="models/reverse_curriculum/ppo_reverse_curriculum_90000_steps.zip",
-        help="Path to trained model",
+        "--model", type=str, default=None,
+        help="Path to trained model (interactive selection if omitted)",
     )
     parser.add_argument(
         "--stage1-model", type=str,
@@ -225,12 +361,24 @@ if __name__ == "__main__":
         default="new_boards_2.json",
         help="Path to board library JSON",
     )
+    parser.add_argument(
+        "-d", "--deterministic", action="store_true",
+        help="Agent always plays the same response (default)",
+    )
+    parser.add_argument(
+        "-s", "--stochastic", action="store_true",
+        help="Agent samples from policy (varied responses)",
+    )
 
     args = parser.parse_args()
+
+    # Determine mode: stochastic flag overrides deterministic default
+    deterministic = not args.stochastic
 
     play(
         board_size=args.size,
         model_path=args.model,
         stage1_model_path=args.stage1_model,
         board_library_path=args.board_library,
+        deterministic=deterministic,
     )

@@ -63,6 +63,7 @@ def evaluate_phase(
         curriculum_phase=phase,
         opponent_strategy="random",
         show_opponent_board=True,
+        max_construction_steps=20,
     )
 
     # Evaluation metrics
@@ -93,8 +94,9 @@ def evaluate_phase(
                 action, _states = model.predict(obs, deterministic=True, action_masks=action_masks)
             else:
                 action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, truncated, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             episode_reward += reward
+            done = terminated or truncated
 
         # Record results
         is_valid = info.get('valid_board', False)
