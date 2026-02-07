@@ -30,6 +30,19 @@ from spaces_game.types import Board
 from spaces_game.cli import _render_result_details, _render_board
 
 
+def _get_model_board_size(model) -> Optional[int]:
+    """Extract board size from a loaded model's observation space."""
+    try:
+        obs_space = model.observation_space
+        if hasattr(obs_space, 'spaces') and 'building_board' in obs_space.spaces:
+            return obs_space.spaces['building_board'].shape[0]
+        if hasattr(obs_space, 'shape') and obs_space.shape is not None:
+            return obs_space.shape[0]
+    except Exception:
+        pass
+    return None
+
+
 def _load_agent(model_path: str):
     """Load the trained agent model."""
     try:
@@ -267,36 +280,51 @@ def _agent_build_board(
     board_size: int = 2,
     board_library_path: str = "new_boards_2.json",
     stage1_model_path: str = "models/construction/best/best_model.zip",
+    max_retries: int = 5,
 ) -> Board:
-    """Have the agent build a counter-board against the player's board."""
+    """Have the agent build a counter-board against the player's board.
+
+    Retries up to max_retries times if the agent produces an invalid board.
+    """
     env = ReverseCurriculumBuilderEnv(
         board_size=board_size,
         board_library_path=board_library_path,
         stage1_model_path=stage1_model_path if Path(stage1_model_path).exists() else None,
         curriculum_phase=10,  # Full construction
-        opponent_strategy="fixed_0",  # Will override with player board
+        opponent_strategy="random",
         show_opponent_board=True,
     )
 
-    # Override the opponent board with the player's board
-    env.opponent_board = player_board
-    seed = 42 if deterministic else random.randint(0, 100000)
-    obs, info = env.reset(seed=seed)
-    env.opponent_board = player_board  # Re-set after reset
+    # Override opponent selection so Stage 1 picks a counter to the PLAYER's board
+    env._select_opponent_board = lambda: player_board
 
-    done = False
-    while not done:
-        if uses_masks:
-            action_masks = env.action_masks()
-            action, _ = model.predict(obs, deterministic=deterministic, action_masks=action_masks)
-        else:
-            action, _ = model.predict(obs, deterministic=deterministic)
-        obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
+    best_board = None
+    for attempt in range(max_retries):
+        seed = 42 + attempt if deterministic else random.randint(0, 100000)
+        obs, info = env.reset(seed=seed)
 
-    agent_board = env._construct_board_from_state()
+        done = False
+        while not done:
+            if uses_masks:
+                action_masks = env.action_masks()
+                action, _ = model.predict(obs, deterministic=deterministic, action_masks=action_masks)
+            else:
+                action, _ = model.predict(obs, deterministic=deterministic)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+        board = env._construct_board_from_state()
+        if is_board_playable(board):
+            env.close()
+            if attempt > 0:
+                click.echo(click.style(f"  (valid board on attempt {attempt + 1})", fg="cyan"))
+            return board
+        best_board = board
+
     env.close()
-    return agent_board
+    # All retries failed - return the last attempt so caller can show it as invalid
+    click.echo(click.style(f"  (no valid board after {max_retries} attempts)", fg="red"))
+    return best_board
 
 
 def _display_board_simple(board: Board, title: str):
@@ -344,7 +372,18 @@ def play(
     click.echo(f"\n  Agent: {model_path}")
     click.echo("  Loading agent model...")
     model, uses_masks = _load_agent(model_path)
-    click.echo(click.style("  Agent loaded!", fg="green"))
+    model_board_size = _get_model_board_size(model)
+    if model_board_size:
+        size_color = "green" if model_board_size == board_size else "red"
+        click.echo(f"  Agent loaded! (trained on size {click.style(str(model_board_size), fg=size_color)} boards)")
+        if model_board_size != board_size:
+            click.echo(click.style(
+                f"  WARNING: Model expects size {model_board_size} but game is size {board_size}. "
+                f"Use --size {model_board_size} or pick a different model.",
+                fg="red", bold=True,
+            ))
+    else:
+        click.echo(click.style("  Agent loaded!", fg="green"))
 
     while True:
         click.echo(click.style("\n" + "-" * 50, bold=True))
@@ -418,13 +457,24 @@ def play(
 
         # Agent builds counter-board
         click.echo(click.style("\n  Agent is building a counter-board...", fg="yellow"))
-        agent_board = _agent_build_board(
-            player_board, model, uses_masks,
-            deterministic=deterministic,
-            board_size=board_size,
-            board_library_path=board_library_path,
-            stage1_model_path=stage1_model_path,
-        )
+        try:
+            agent_board = _agent_build_board(
+                player_board, model, uses_masks,
+                deterministic=deterministic,
+                board_size=board_size,
+                board_library_path=board_library_path,
+                stage1_model_path=stage1_model_path,
+            )
+        except ValueError as e:
+            if "observation shape" in str(e).lower() or "unexpected observation" in str(e).lower():
+                click.echo(click.style(
+                    f"\n  Board size mismatch: model was trained on a different size.",
+                    fg="red", bold=True,
+                ))
+                if model_board_size:
+                    click.echo(f"  Use --size {model_board_size} or pick a model trained on size {board_size}.")
+                continue
+            raise
 
         # Validate agent's board
         agent_valid = _validate_and_display(agent_board, "Agent")

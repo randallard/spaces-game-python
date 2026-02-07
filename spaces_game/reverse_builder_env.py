@@ -488,7 +488,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
         if self.steps_taken >= self.max_construction_steps:
             agent_board = self._construct_board_from_state()
             is_valid = is_board_playable(agent_board)
-            reward = -10.0 if not is_valid else 0.0
+            reward = -50.0 if not is_valid else 0.0
             obs = self._get_observation()
             info = {
                 "round": self.current_round + 1,
@@ -647,7 +647,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             if agent_score > opponent_score:
                 reward += 20.0
             elif agent_score == opponent_score:
-                reward += 0.0  # Ties are not winning
+                reward += -5.0  # Ties are not winning — push for wins
             else:
                 reward += -10.0
 

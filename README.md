@@ -167,26 +167,31 @@ cd ../spaces-game-engine
 npm run cli -- generate-boards --size 3 --limit 500 --output ../spaces-game-python/data/boards_size_3.json
 ```
 
-## Training Curriculum
+## Training Progress
 
-Recommended progression for RL training:
+### Completed Stages
 
-1. **Size 3** (500 boards): Learn fundamentals
-   - Basic trap placement
-   - Forward movement optimization
-   - Opponent anticipation
+- **Stage 0 - Deck Selection**: Agent learns board evaluation and matchup strategy
+- **Stage 1 - Board Construction**: 100% optimal counter-play on 8 curated size-2 boards
+  - Model: `models/construction/best/best_model.zip`
+- **Stage 2 - Reverse Curriculum Construction**: Agent builds valid boards from scratch
+  - **Size 2**: `models/stage2_optimized/ppo_stage2_final.zip`
+  - **Size 3**: `models/size3/stage2/ppo_stage2_final.zip`
 
-2. **Size 4** (5K boards): Intermediate complexity
-   - Multi-step planning
-   - Trap combination strategies
-   - Column selection importance
+### Play Against the Agent
 
-3. **Size 5** (50K boards): Advanced play
-   - Long-term planning
-   - Complex trap networks
-   - Meta-game patterns
+```bash
+# Size 2
+python examples/play_against_agent.py --size 2 --model models/stage2_optimized/ppo_stage2_final.zip
 
-4. **Size 6+**: Transfer learning (sampled)
+# Size 3
+python examples/play_against_agent.py --size 3 --board-library new_boards_3.json --model models/size3/stage2/ppo_stage2_final.zip
+```
+
+### Next Stages
+
+- **Stage 3**: Fog of war (partial observability + inference)
+- **Stage 4**: Self-play (meta-game, emergent strategies)
 
 ## Gymnasium Environment Details
 

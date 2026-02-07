@@ -57,8 +57,10 @@ class PhaseProgressionCallback(BaseCallback):
     def __init__(
         self,
         eval_freq: int = 1000,
-        eval_episodes: int = 20,
-        win_rate_threshold: float = 0.65,
+        eval_episodes: int = 50,
+        win_rate_threshold: float = 0.75,
+        valid_rate_threshold: float = 0.95,
+        min_steps_per_phase: int = 5000,
         max_phase: int = 10,
         board_size: int = 2,
         board_library_path: str = "new_boards_2.json",
@@ -71,11 +73,14 @@ class PhaseProgressionCallback(BaseCallback):
         self.eval_freq = eval_freq
         self.eval_episodes = eval_episodes
         self.win_rate_threshold = win_rate_threshold
+        self.valid_rate_threshold = valid_rate_threshold
+        self.min_steps_per_phase = min_steps_per_phase
         self.max_phase = max_phase
         self.current_phase = 0
         self.phase_history = []
         self.eval_callback_env = eval_callback_env
         self.output_dir = output_dir
+        self._phase_start_step = 0  # Track when current phase started
 
         # Dedicated single env for accurate phase evaluation
         self._eval_env = ReverseCurriculumBuilderEnv(
@@ -148,13 +153,15 @@ class PhaseProgressionCallback(BaseCallback):
             print(f"  Valid rate: {valid_rate:.1%} ({valid_boards}/{self.eval_episodes})")
             print(f"  Avg reward: {avg_reward:.2f}")
 
-        # Advance when win rate >= 65% AND valid rate >= 80%
-        # Win rate threshold accounts for ~25% tie-only boards (2/8 size-2 boards)
-        # 65% win rate = winning ~87% of beatable games
+        # Advance when win rate AND valid rate exceed thresholds,
+        # AND agent has spent minimum steps at this phase
+        steps_at_phase = self.n_calls - self._phase_start_step
         if (win_rate >= self.win_rate_threshold and
-            valid_rate >= 0.80 and
+            valid_rate >= self.valid_rate_threshold and
+            steps_at_phase >= self.min_steps_per_phase and
             self.current_phase < self.max_phase):
             self.current_phase += 1
+            self._phase_start_step = self.n_calls
 
             # Update training environments (works for both SubprocVecEnv and DummyVecEnv)
             try:
@@ -287,7 +294,7 @@ def train(
     print(f"  - Phase 0: Place goal only (1 move)")
     print(f"  - Phase 1: Place last move + goal (2 moves)")
     print(f"  - Phase N: Place last N moves + goal")
-    print(f"  - Auto-advance at 80%+ win rate")
+    print(f"  - Auto-advance at 75%+ win rate AND 95%+ valid rate (min 5k steps/phase)")
     print(f"  - Action masking enforces valid placements")
     print("=" * 70)
 
@@ -328,8 +335,10 @@ def train(
     # Callbacks
     phase_callback = PhaseProgressionCallback(
         eval_freq=eval_freq,
-        eval_episodes=20,
-        win_rate_threshold=0.65,
+        eval_episodes=50,
+        win_rate_threshold=0.75,
+        valid_rate_threshold=0.95,
+        min_steps_per_phase=5000,
         max_phase=10,
         board_size=board_size,
         board_library_path=board_library_path,
