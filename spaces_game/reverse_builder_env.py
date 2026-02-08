@@ -276,6 +276,9 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             if self.current_piece_position is None:
                 return False  # Cannot place trap before piece
 
+            if len(self.trap_positions) >= self.board_size - 1:
+                return False  # Trap limit: max board_size - 1 traps
+
             if self.supermove_active:
                 return False  # Must move piece first after supermove
 

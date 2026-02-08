@@ -59,6 +59,7 @@ class SimultaneousPlayEnv(gym.Env):
         opponent_phase: int = 0,
         phase_map: Optional[Dict[int, List[int]]] = None,
         max_construction_steps: int = 20,
+        board_library_path: Optional[str] = None,
     ):
         super().__init__()
 
@@ -78,6 +79,16 @@ class SimultaneousPlayEnv(gym.Env):
             if len(boards) == 0:
                 raise ValueError(f"Empty board pool: {path}")
             self.opponent_pools.append(boards)
+
+        # Construction scaffolding (reverse curriculum within Stage 3)
+        # scaffolding_moves_to_remove:
+        #   -1 = disabled (no scaffolding, agent builds from scratch)
+        #    0 = easiest (pre-fill all but goal)
+        #    N = remove N non-goal moves + goal from library board
+        self.board_library: List[Board] = []
+        self.scaffolding_moves_to_remove: int = -1  # -1 = disabled
+        if board_library_path is not None:
+            self.board_library = load_boards_from_json(board_library_path)
 
         # Action space: [cell, type, done]
         self.action_space = spaces.MultiDiscrete([
@@ -140,6 +151,66 @@ class SimultaneousPlayEnv(gym.Env):
         self.supermove_active: bool = False
         self.supermove_position: Optional[Position] = None
         self.construction_sequence: List[Dict[str, Any]] = []
+
+        # Apply scaffolding if enabled (>= 0) and library loaded
+        if self.scaffolding_moves_to_remove >= 0 and self.board_library:
+            self._prefill_from_library()
+
+    def set_scaffolding(self, moves_to_remove: int) -> None:
+        """Set scaffolding level. Callable via SubprocVecEnv.env_method()."""
+        self.scaffolding_moves_to_remove = moves_to_remove
+
+    def _prefill_from_library(self) -> None:
+        """Pre-fill construction state from a random library board."""
+        board = self.board_library[
+            np.random.randint(len(self.board_library))
+        ]
+        sequence = list(board.sequence)
+        moves_to_remove = min(
+            self.scaffolding_moves_to_remove + 1,  # +1 for goal
+            len(sequence),
+        )
+        partial_sequence = (
+            sequence[:-moves_to_remove] if moves_to_remove > 0
+            else sequence
+        )
+
+        # Reconstruct game state from partial sequence
+        # (mirrors validation.py's is_board_playable() logic)
+        for move in partial_sequence:
+            if move.type == "final":
+                continue
+
+            entry = {
+                "row": move.position.row,
+                "col": move.position.col,
+                "type": move.type,
+                "order": move.order,
+            }
+            self.construction_sequence.append(entry)
+
+            # Update building grid
+            if move.type == "piece":
+                self.building_grid[
+                    move.position.row, move.position.col, 0
+                ] = move.order
+                if self.supermove_active:
+                    self.supermove_active = False
+                    self.supermove_position = None
+                self.current_piece_position = move.position
+            elif move.type == "trap":
+                self.building_grid[
+                    move.position.row, move.position.col, 1
+                ] = move.order
+                pos_key = f"{move.position.row},{move.position.col}"
+                self.trap_positions.add(pos_key)
+                if (self.current_piece_position is not None
+                        and move.position.row == self.current_piece_position.row
+                        and move.position.col == self.current_piece_position.col):
+                    self.supermove_active = True
+                    self.supermove_position = move.position
+
+        self.construction_step = len(self.construction_sequence)
 
     # --- Opponent selection ---
 
@@ -213,6 +284,9 @@ class SimultaneousPlayEnv(gym.Env):
         elif move_type == "trap":
             if self.current_piece_position is None:
                 return False
+
+            if len(self.trap_positions) >= self.board_size - 1:
+                return False  # Trap limit: max board_size - 1 traps
 
             if self.supermove_active:
                 return False
@@ -360,9 +434,9 @@ class SimultaneousPlayEnv(gym.Env):
         """Get current observation."""
         return {
             "building_board": self.building_grid.copy(),
-            "construction_step": self.construction_step,
+            "construction_step": min(self.construction_step, self.max_construction_steps),
             "valid_cells_mask": self._get_valid_cells_mask(),
-            "round": self.current_round,
+            "round": min(self.current_round, self.ROUNDS_PER_GAME - 1),
             "score_diff": np.array(
                 [self.agent_total_score - self.opponent_total_score],
                 dtype=np.float32,

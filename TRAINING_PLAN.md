@@ -17,23 +17,46 @@ Stage 0: Deck Selection (Board Evaluation)              ✅ COMPLETE
    ↓
 Stage 1: Perfect Counter-Play (Board Construction)      ✅ COMPLETE
    ↓
-Stage 2: Reverse Curriculum Construction (Size 2 & 3)   ✅ COMPLETE
+Stage 2: Reverse Curriculum Construction                 ⚠️  OBSOLETE (replaced by Stage 3 scaffolding)
    ↓
-Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ Size 2 COMPLETE
+Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 DONE / ⏳ SIZE 3 TRAINING
    ↓
-Stage 4: 5-Round Play with Fog of War                   ⏳ IN PROGRESS
+Stage 4: 5-Round Play with Fog of War                   ⏳ TODO
    ↓
 Stage 5: Self-Play (Meta-Game)                           ⏳ TODO
    ↓
 FINAL BOSS: 5-Round Fog of War vs Humans
 ```
 
+### Trap Limit Rule
+
+**Max traps per board = board_size - 1** (size 2 = 1 trap max).
+
+Without this, the agent discovers a single dominant strategy (supermove + extra trap)
+and never adapts. With the limit, the agent must choose between:
+- **Supermove** (trap on own cell) — gets past the cell but uses your only trap
+- **Regular trap** (on adjacent cell) — blocks opponent but no supermove
+- **No trap** — fastest path, no defense
+
+Enforced via `_is_valid_placement()` in both `ReverseCurriculumBuilderEnv` and
+`SimultaneousPlayEnv`. Action masks flow through automatically.
+
+### Why Stages 0 and 1 Don't Need Retraining
+
+Stages 2 and 3 train **from scratch** (fresh random weights) — no weight transfer
+from earlier stages. The Stage 1 model is used during Stage 2 to select base boards
+from the library, but since `new_boards_2.json` has been cleaned to only contain
+legal boards (≤1 trap), the Stage 1 model can only pick from compliant boards.
+Stage 3 (`SimultaneousPlayEnv`) doesn't use Stage 0 or 1 models at all.
+
 ### Training Progression Per Board Size
 
 For each board size (2, 3, ...):
-1. Train simultaneous 5-round play with full reveal (Stage 3)
-2. Train 5-round play with fog of war (Stage 4)
-3. Scale to next board size
+1. Implement trap limit (`board_size - 1` max traps)
+2. Train reverse curriculum construction (Stage 2)
+3. Train simultaneous 5-round play with full reveal (Stage 3)
+4. Train 5-round play with fog of war (Stage 4)
+5. Scale to next board size
 
 Each stage builds on the previous one's learned skills.
 
@@ -63,7 +86,7 @@ Each stage builds on the previous one's learned skills.
   - Used for controlled testing and optimal selection validation
   - Covers key board patterns: traps, no-traps, left/right columns
 
-- `new_boards_3.json` ✅ - 14 curated size-3 boards with diverse strategies
+- `new_boards_3.json` ✅ - 11 curated size-3 boards (cleaned: removed 3-trap violations)
 
 - `data/boards_size_2.json` - 16 auto-generated size-2 boards (for comparison)
 - `data/boards_size_3.json` - 500 auto-generated size-3 boards
@@ -228,40 +251,59 @@ Win rate:       95%
 
 ---
 
-## Stage 2: Reverse Curriculum Construction (COMPLETE)
+## Stage 2: Reverse Curriculum Construction (OBSOLETE)
 
-**Purpose**: Learn to construct valid, competitive boards from scratch using a reverse curriculum that progressively removes scaffolding.
+**Purpose**: Was intended to teach board construction from scratch using a standalone reverse curriculum.
 
-### What Agent Learns:
-- Board construction from scratch (place pieces, traps, goal)
-- Valid board generation (path to goal, legal move sequences)
-- Counter-strategy (build boards that beat opponent boards)
+### Status: Replaced by Stage 3 Construction Scaffolding
 
-### Results:
-- ✅ **Size 2**: Solved. Model: `models/stage2_optimized/ppo_stage2_final.zip`
-- ✅ **Size 3**: Solved. Model: `models/size3/stage2/ppo_stage2_final.zip`
-- Agents win or tie against most library boards; intermittent invalid boards handled by retry logic in play script
+With the trap limit rule (`max_traps = board_size - 1`), Stage 2 can no longer advance past Phase 0. Boards are balanced enough that blind play against random opponents tops out at 16-34% win rate, well below the 75% threshold to advance phases.
+
+**The solution**: Construction scaffolding was built directly into Stage 3's `SimultaneousPlayEnv`. A single training run now handles both construction learning (reverse curriculum) and opponent curriculum. See Stage 3 for details.
+
+### Historical Results (pre-obsolescence):
+- Size 2: `models/stage2_optimized/ppo_stage2_final.zip`
+- Size 3: `models/size3/stage2/ppo_stage2_final.zip`
 
 ---
 
-## Stage 3: Simultaneous 5-Round Play with Full Reveal (Size 2 COMPLETE)
+## Stage 3: Simultaneous 5-Round Play with Full Reveal
 
 **Purpose**: Learn to construct boards blindly (no peeking at opponent) and adapt across 5 rounds based on what the opponent played in previous rounds.
+
+**Status**:
+- ✅ **Size 2**: Complete. Agent reaches Phase 4 (all opponents), 40-65% win rate (expected for blind play). Model: `models/size2/stage3/best/best_model.zip`
+- ⏳ **Size 3**: Training in progress with construction scaffolding.
 
 ### What Agent Learns:
 - Build competitive boards without seeing opponent's current board
 - Recognize opponent patterns from revealed previous-round boards
 - Adapt strategy across 5 rounds (counter what opponent tends to play)
 - The 50/50 column choice as fundamental strategic uncertainty
+- **Strategic trade-offs**: supermove vs regular trap vs no trap (max `board_size - 1` traps)
 
 ### Implementation:
 - ✅ Environment: `SimultaneousPlayEnv` in `spaces_game/simultaneous_play_env.py`
 - ✅ Training script: `examples/train_simultaneous.py`
-- ✅ Curated opponent board pools in `boards/size2/`:
-  - `simple.json` - straight paths, no traps (col 0 and col 1 variants)
-  - `one_trap.json` - straight path + trap on opposite column
-  - `super_move.json` - supermove (trap on own cell) + straight path
-  - `super_move_counter.json` - cross-column path that beats supermove
+- ✅ Multi-round play script: `examples/play_against_agent.py --rounds 5`
+- ✅ Trap limit enforcement in `_is_valid_placement()` + action masks
+- ✅ Construction scaffolding (replaces Stage 2) via `--board-library`
+- ✅ Curated opponent board pools in `boards/size2/` and `boards/size3/`:
+  - `simple.json` - straight paths, no traps
+  - `one_trap.json` - straight path + 1 trap
+  - `super_move.json` - supermove (trap on own cell)
+  - `super_move_counter.json` - 2 traps with crossover patterns
+
+### Construction Scaffolding (replaces Stage 2):
+
+When `--board-library` is provided, a construction curriculum runs before the opponent curriculum. Boards are pre-filled from the library, with scaffolding gradually removed:
+
+- Phase C0: Pre-fill all but goal -> agent just signals "done"
+- Phase C1: Pre-fill all but last piece + goal
+- Phase CN: No pre-fill -> agent builds from scratch
+- Advances on valid_rate >= 95% (min 10k steps/phase)
+
+Once the agent builds valid boards from scratch, opponent phases begin.
 
 ### Progressive Opponent Curriculum:
 - Phase 0: Simple boards only
@@ -294,25 +336,27 @@ Win rate:       95%
 }
 ```
 
-### Results (Size 2):
-- ✅ 91% game win rate against all board types mixed (phase 5)
-- ✅ 99% valid board rate
-- ✅ Reached phase 5 in ~770k steps (~24 min)
-- Model: `models/size2/stage3/ppo_stage3_final.zip`
-- Key finding: `ent_coef=0.1` needed for sufficient exploration against harder opponents
-
-### Training Command:
+### Training Commands:
 ```bash
-# Size 2 (solved)
-python examples/train_simultaneous.py --size 2 --timesteps 1000000
+# Size 2 (no scaffolding needed - learns construction from scratch)
+python examples/train_simultaneous.py --size 2 --timesteps 200000
 
-# Size 3 (TODO - create boards/size3/ opponent pools first)
-python examples/train_simultaneous.py --size 3 --timesteps 2000000
+# Size 3 (with construction scaffolding)
+python examples/train_simultaneous.py --size 3 --board-library new_boards_3.json --timesteps 500000
+
+# Monitor
+tensorboard --logdir logs/size3_stage3/
 ```
+
+### Key findings:
+- Size 2 learns construction from scratch (0% -> 100% valid rate in ~8k steps)
+- Size 3 cannot learn construction from scratch (8% valid rate at 27k steps) -- scaffolding essential
+- 40-65% win rate at Phase 4 is expected for blind play against mixed random opponents
+- `ent_coef=0.05` works well (0.1 for harder phases if needed)
 
 ---
 
-## Stage 4: 5-Round Play with Fog of War (IN PROGRESS)
+## Stage 4: 5-Round Play with Fog of War (TODO)
 
 **Purpose**: Same as Stage 3 but with partial observability. After simulation, agent only sees opponent's moves up to the point they were stopped (trap/collision/goal), plus outcome info. Must infer opponent's full strategy from limited data.
 
@@ -464,38 +508,49 @@ python examples/play_vs_agent.py \
 
 ## ⚡ Quick Start: Current Status
 
+### Size 2 Retraining (with trap limit):
+```bash
+# 1. Implement trap limit (code change required first)
+
+# 2. Retrain Stage 2: reverse curriculum construction
+python examples/train_reverse_curriculum.py --size 2 --timesteps 500000
+
+# 3. Retrain Stage 3: simultaneous 5-round play
+python examples/train_simultaneous.py --size 2 --timesteps 1000000
+
+# 4. Verify: play a 5-round game against the agent
+python examples/play_against_agent.py --size 2 --rounds 5
+```
+
 ### Play Against the Agent:
 ```bash
-# Single-round play (Stage 2 agent)
+# 5-round game (Stage 3 model auto-detected)
+python examples/play_against_agent.py --size 2 --rounds 5
+
+# With fog of war
+python examples/play_against_agent.py --size 2 --rounds 5 --fog
+
+# Single-round play
 python examples/play_against_agent.py --size 2
 
 # Size 3
 python examples/play_against_agent.py --size 3 --board-library new_boards_3.json
 ```
 
-### Train Next Stage:
-```bash
-# Stage 3: Simultaneous 5-round (size 2 solved, size 3 next)
-python examples/train_simultaneous.py --size 3 --timesteps 2000000
-
-# Stage 4: Fog of war (after implementing fog flag)
-python examples/train_simultaneous.py --size 2 --fog --timesteps 2000000
-```
-
 ### What's Next:
 
-**Immediate**:
-- Implement fog of war in `SimultaneousPlayEnv`
-- Update `play_against_agent.py` for multi-round play verification
-- Create `boards/size3/` opponent pools for size 3 training
+**In progress**:
+- Size 3 Stage 3 training with construction scaffolding (500k steps)
+- Monitor: `tensorboard --logdir logs/size3_stage3/`
 
 **Short-term**:
-- Train Stage 4 (fog of war) on size 2
-- Train Stage 3 + 4 on size 3
-- Scale to size 4+
+- Evaluate size 3 Stage 3 results, play against agent
+- Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
+- Train Stage 4 on size 2 first, then size 3
 
 **Long-term**:
 - Self-play training (Stage 5)
+- Scale to size 4+
 - Human vs agent exhibition matches
 
 ---
@@ -506,14 +561,15 @@ python examples/train_simultaneous.py --size 2 --fog --timesteps 2000000
 ```bash
 tensorboard --logdir logs/
 # Monitor: ep_rew_mean, eval/mean_reward, train/loss
+# Stage 3 specific: curriculum/construction_phase, curriculum/opponent_phase, curriculum/valid_rate
 ```
 
 ### Key Metrics by Stage:
 
 **Stage 0**: Win rate vs greedy, optimal selection accuracy
 **Stage 1**: Trap avoidance, path completion, win rate vs fixed boards
-**Stage 2**: Valid board rate, win rate vs library boards
-**Stage 3**: Game win rate (5-round), valid rate, opponent phase progression
+**Stage 2**: ~~Valid board rate, win rate vs library boards~~ (obsolete)
+**Stage 3**: Game win rate (5-round), valid rate, construction phase progression, opponent phase progression
 **Stage 4**: Game win rate under fog, inference quality (adaptation across rounds)
 **Stage 5**: Win rate vs historical self, strategy diversity, Elo progression
 
@@ -524,9 +580,10 @@ tensorboard --logdir logs/
 - `examples/README.md` - Detailed tool documentation
 - `TRAINING.md` - Training machine setup and tips
 - `README.md` - Project overview and installation
+- `journal/` - Training journals with detailed analysis per session
 
 ---
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Stages 0-3 Complete (Size 2)** - Simultaneous 5-round play solved at 91% win rate. Next: Fog of war (Stage 4), then scale to size 3+.
+Current Status: **Size 3 Stage 3 training in progress** - Size 2 complete (40-65% win rate at Phase 4). Size 3 uses construction scaffolding to teach board building before opponent curriculum. Stage 2 obsoleted by scaffolding built into Stage 3.
