@@ -59,3 +59,13 @@ Thumbs.db
 data/boards_size_4_large.json
 data/boards_size_5.json
 data/*_large.json
+
+# Training artifacts (symlinks to /mnt/storage/ml/)
+logs
+models
+
+# Evaluation data
+eval/
+
+# Training logs
+train.log
