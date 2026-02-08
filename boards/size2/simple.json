@@ -1,0 +1,80 @@
+[
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "piece",
+        "empty"
+      ],
+      [
+        "piece",
+        "empty"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 0
+        },
+        "type": "final",
+        "order": 3
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "empty",
+        "piece"
+      ],
+      [
+        "empty",
+        "piece"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 3
+      }
+    ]
+  }
+]

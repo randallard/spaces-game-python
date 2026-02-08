@@ -1,0 +1,112 @@
+[
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "trap",
+        "piece"
+      ],
+      [
+        "piece",
+        "piece"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 5
+      }
+    ]
+  },
+  {
+    "boardSize": 2,
+    "grid": [
+      [
+        "piece",
+        "trap"
+      ],
+      [
+        "piece",
+        "piece"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 0
+        },
+        "type": "piece",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 0
+        },
+        "type": "final",
+        "order": 5
+      }
+    ]
+  }
+]

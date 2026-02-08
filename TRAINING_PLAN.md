@@ -19,12 +19,21 @@ Stage 1: Perfect Counter-Play (Board Construction)      ✅ COMPLETE
    ↓
 Stage 2: Reverse Curriculum Construction (Size 2 & 3)   ✅ COMPLETE
    ↓
-Stage 3: Construction + Fog of War (Inference)           ⏳ TODO
+Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ Size 2 COMPLETE
    ↓
-Stage 4: Self-Play (Meta-Game)                           ⏳ TODO
+Stage 4: 5-Round Play with Fog of War                   ⏳ IN PROGRESS
+   ↓
+Stage 5: Self-Play (Meta-Game)                           ⏳ TODO
    ↓
 FINAL BOSS: 5-Round Fog of War vs Humans
 ```
+
+### Training Progression Per Board Size
+
+For each board size (2, 3, ...):
+1. Train simultaneous 5-round play with full reveal (Stage 3)
+2. Train 5-round play with fog of war (Stage 4)
+3. Scale to next board size
 
 Each stage builds on the previous one's learned skills.
 
@@ -235,67 +244,120 @@ Win rate:       95%
 
 ---
 
-## Stage 3 (future): Construction + Fog of War
+## Stage 3: Simultaneous 5-Round Play with Full Reveal (Size 2 COMPLETE)
 
-**Purpose**: Learn to infer opponent's full board from partial observations.
+**Purpose**: Learn to construct boards blindly (no peeking at opponent) and adapt across 5 rounds based on what the opponent played in previous rounds.
 
 ### What Agent Learns:
-- Inference from partial data (opponent stopped at step 3 → likely has trap there)
-- Probability estimation (opponent probably has more traps based on R1 behavior)
-- Adaptive construction (build counters based on inferred opponent strategy)
+- Build competitive boards without seeing opponent's current board
+- Recognize opponent patterns from revealed previous-round boards
+- Adapt strategy across 5 rounds (counter what opponent tends to play)
+- The 50/50 column choice as fundamental strategic uncertainty
 
-### Game Flow:
+### Implementation:
+- ✅ Environment: `SimultaneousPlayEnv` in `spaces_game/simultaneous_play_env.py`
+- ✅ Training script: `examples/train_simultaneous.py`
+- ✅ Curated opponent board pools in `boards/size2/`:
+  - `simple.json` - straight paths, no traps (col 0 and col 1 variants)
+  - `one_trap.json` - straight path + trap on opposite column
+  - `super_move.json` - supermove (trap on own cell) + straight path
+  - `super_move_counter.json` - cross-column path that beats supermove
+
+### Progressive Opponent Curriculum:
+- Phase 0: Simple boards only
+- Phase 1: One-trap boards
+- Phase 2: Simple + one-trap mixed
+- Phase 3: Supermove boards
+- Phase 4: All board types mixed
+- Auto-advances when game win rate >= 70% and valid rate >= 90%
+
+### Game Flow (per round):
 ```
-Round 1:
-  - Both build boards simultaneously (no info yet)
-  - Simulate with FOG OF WAR
-  - Agent sees: opponent's moves until trap/collision/goal
-  - Agent doesn't see: rest of opponent's board
-
-Round 2:
-  - Agent uses R1 partial info to infer opponent strategy
-  - Builds counter-board based on inference
-  - Simulate with fog of war
-  - Accumulate more partial info
-
-... Rounds 3-5 continue building inference ...
+1. Agent constructs board (blind - can't see opponent)
+2. Opponent picks from their archetype pool
+3. Simulation runs
+4. Opponent's FULL board revealed in opponent_history
+5. Scores update, next round begins
 ```
 
 ### Observation Space:
 ```python
 {
-    "round": 1-5,
-    "score_diff": current differential,
-    "opponent_visible_history": [
-        # Round 1: What we saw
-        {
-            "visible_moves": [(row, col, order), ...],
-            "stopped_at_step": 3,
-            "reason": "trap" | "collision" | "goal",
-        },
-        # Round 2: What we saw
-        ...
-    ],
+    "building_board":    (size, size, 2),    # current construction state
+    "construction_step": Discrete,
+    "valid_cells_mask":  MultiBinary,
+    "round":             Discrete(5),        # 0-4
+    "score_diff":        float,
+    "agent_score":       float,
+    "opponent_score":    float,
+    "opponent_history":  (5, size, size, 2), # full reveal of past rounds
 }
 ```
 
-### Training Command (Future):
-```bash
-python examples/train_fog_of_war.py \
-    --board-pool data/boards_size_3.json \
-    --opponent pattern_based \  # Has predictable style
-    --timesteps 10000000 \
-    --n-envs 4
-```
+### Results (Size 2):
+- ✅ 91% game win rate against all board types mixed (phase 5)
+- ✅ 99% valid board rate
+- ✅ Reached phase 5 in ~770k steps (~24 min)
+- Model: `models/size2/stage3/ppo_stage3_final.zip`
+- Key finding: `ent_coef=0.1` needed for sufficient exploration against harder opponents
 
-### Success Criteria:
-- 70%+ win rate vs pattern-based opponents
-- Agent demonstrates inference (different choices based on fog observations)
-- Beats "always trap center" opponent >80% of time
+### Training Command:
+```bash
+# Size 2 (solved)
+python examples/train_simultaneous.py --size 2 --timesteps 1000000
+
+# Size 3 (TODO - create boards/size3/ opponent pools first)
+python examples/train_simultaneous.py --size 3 --timesteps 2000000
+```
 
 ---
 
-## Stage 4 (future): Self-Play (Meta-Game)
+## Stage 4: 5-Round Play with Fog of War (IN PROGRESS)
+
+**Purpose**: Same as Stage 3 but with partial observability. After simulation, agent only sees opponent's moves up to the point they were stopped (trap/collision/goal), plus outcome info. Must infer opponent's full strategy from limited data.
+
+### What Agent Learns:
+- Inference from partial data (opponent stopped early → had a trap/was trapped)
+- Pattern recognition from incomplete information across rounds
+- Risk assessment (opponent's hidden traps vs revealed traps)
+- Adaptive construction under uncertainty
+
+### Game Flow (per round):
+```
+1. Agent constructs board (blind)
+2. Opponent picks from pool
+3. Simulation runs
+4. Agent sees PARTIAL opponent board (moves up to opponentLastStep)
+5. Agent sees outcome: opponent_hit_trap, collision, opponent_reached_goal
+6. Scores update, next round begins
+```
+
+### Key Difference from Stage 3:
+- `opponent_history` shows only revealed moves (sequence[:opponentLastStep+1])
+- Positions rotated to agent's frame via _rotate_position()
+- `fog_outcomes` per round: [opponent_hit_trap, collision, opponent_reached_goal]
+- When opponent hits agent's trap early, their later moves (especially traps) remain hidden
+
+### Implementation Plan:
+- Add `fog_of_war` flag to `SimultaneousPlayEnv`
+- Add `fog_outcomes` to observation space
+- When fog on, partial encode opponent board using simulation result
+- Extend phase map: phases 5+ enable fog of war
+- Update `play_against_agent.py` for multi-round play to verify learning
+
+### Training Progression:
+```bash
+# Size 2: fog of war (after Stage 3 size 2 is solved)
+python examples/train_simultaneous.py --size 2 --fog --timesteps 2000000
+
+# Size 3+: simultaneous full reveal first, then fog
+python examples/train_simultaneous.py --size 3 --timesteps 2000000
+python examples/train_simultaneous.py --size 3 --fog --timesteps 2000000
+```
+
+---
+
+## Stage 5 (future): Self-Play (Meta-Game)
 
 **Purpose**: Discover emergent strategies through adversarial co-evolution.
 
@@ -357,9 +419,10 @@ Once all stages complete, the agent should be ready to play the real game:
 
 ### Agent Capabilities at End:
 - ✅ Understand board evaluation (Stage 0)
-- ✅ Construct optimal boards (Stage 1)
-- ✅ Infer from partial info (Stage 2)
-- ✅ Adapt to opponent (Stage 3)
+- ✅ Construct optimal boards (Stage 1-2)
+- ✅ Adapt across rounds with full info (Stage 3)
+- ✅ Infer from partial info / fog of war (Stage 4)
+- ✅ Counter-adapt via self-play (Stage 5)
 
 ### Exhibition Match Format:
 ```bash
@@ -401,43 +464,39 @@ python examples/play_vs_agent.py \
 
 ## ⚡ Quick Start: Current Status
 
-### What You Can Do Right Now:
+### Play Against the Agent:
+```bash
+# Single-round play (Stage 2 agent)
+python examples/play_against_agent.py --size 2
 
-1. **Train Stage 0** (deck selection):
-   ```bash
-   python examples/train_basic.py --perfect-info --timesteps 500000
-   ```
+# Size 3
+python examples/play_against_agent.py --size 3 --board-library new_boards_3.json
+```
 
-2. **Evaluate training**:
-   ```bash
-   python examples/evaluate_agent.py models/ppo_spacegame_final.zip --perfect-info
-   ```
+### Train Next Stage:
+```bash
+# Stage 3: Simultaneous 5-round (size 2 solved, size 3 next)
+python examples/train_simultaneous.py --size 3 --timesteps 2000000
 
-3. **Validate learning**:
-   ```bash
-   python examples/test_board_selection.py models/ppo_spacegame_final.zip
-   ```
+# Stage 4: Fog of war (after implementing fog flag)
+python examples/train_simultaneous.py --size 2 --fog --timesteps 2000000
+```
 
 ### What's Next:
 
-**Immediate** (After Stage 0 completes):
-- Analyze results: Did perfect info help?
-- Validate: Does agent understand board matchups (80%+ accuracy)?
+**Immediate**:
+- Implement fog of war in `SimultaneousPlayEnv`
+- Update `play_against_agent.py` for multi-round play verification
+- Create `boards/size3/` opponent pools for size 3 training
 
-**Short-term** (Next 1-2 weeks):
-- Implement Stage 1 (board construction environment)
-- Design and test action space for construction
-- Train first construction agent
+**Short-term**:
+- Train Stage 4 (fog of war) on size 2
+- Train Stage 3 + 4 on size 3
+- Scale to size 4+
 
-**Medium-term** (Next month):
-- Implement fog of war mechanics
-- Train inference-based agents (Stage 2)
-- Begin self-play experiments (Stage 3)
-
-**Long-term** (2-3 months):
-- Mature self-play training
+**Long-term**:
+- Self-play training (Stage 5)
 - Human vs agent exhibition matches
-- Publish results/strategies discovered
 
 ---
 
@@ -451,24 +510,12 @@ tensorboard --logdir logs/
 
 ### Key Metrics by Stage:
 
-**Stage 0**:
-- Win rate vs greedy opponent
-- Score differential
-- Optimal selection accuracy
-
-**Stage 1**:
-- Trap avoidance rate
-- Path completion rate
-- Win rate vs fixed boards
-
-**Stage 2**:
-- Inference accuracy (predicted vs actual opponent boards)
-- Win rate vs pattern-based opponents
-
-**Stage 3**:
-- Win rate vs historical self
-- Strategy diversity metrics
-- Elo rating progression
+**Stage 0**: Win rate vs greedy, optimal selection accuracy
+**Stage 1**: Trap avoidance, path completion, win rate vs fixed boards
+**Stage 2**: Valid board rate, win rate vs library boards
+**Stage 3**: Game win rate (5-round), valid rate, opponent phase progression
+**Stage 4**: Game win rate under fog, inference quality (adaptation across rounds)
+**Stage 5**: Win rate vs historical self, strategy diversity, Elo progression
 
 ---
 
@@ -482,4 +529,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Stages 0-2 Complete** - Size 2 and 3 board construction solved. Next: Fog of war (Stage 3).
+Current Status: **Stages 0-3 Complete (Size 2)** - Simultaneous 5-round play solved at 91% win rate. Next: Fog of war (Stage 4), then scale to size 3+.

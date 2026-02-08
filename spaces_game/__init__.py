@@ -42,6 +42,7 @@ from .gym_env import SpacesGameEnv
 from .construction_env import BoardConstructionEnv
 from .builder_env import BoardBuilderEnv
 from .reverse_builder_env import ReverseCurriculumBuilderEnv
+from .simultaneous_play_env import SimultaneousPlayEnv
 
 # Optional: BoardModifierEnv (Stage 1.5 - experimental)
 try:
@@ -76,6 +77,7 @@ __all__ = [
     "BoardConstructionEnv",
     "BoardBuilderEnv",
     "ReverseCurriculumBuilderEnv",
+    "SimultaneousPlayEnv",
 ]
 
 # Add BoardModifierEnv to exports if available
