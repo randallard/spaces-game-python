@@ -295,6 +295,8 @@ def _render_result_details(result: RoundResult, fog_of_war: bool = False) -> Non
     opponent_score = 0
     player_pos: Optional[Position] = None
     opponent_pos: Optional[Position] = None
+    player_best_row: Optional[int] = None
+    opponent_best_row: Optional[int] = None
 
     max_steps = max(player_steps, opponent_steps)
 
@@ -306,9 +308,12 @@ def _render_result_details(result: RoundResult, fog_of_war: bool = False) -> Non
                 old_pos = player_pos
                 player_pos = move.position
                 click.echo(f"Player moves to ({player_pos.row}, {player_pos.col})")
-                if old_pos and old_pos.row > player_pos.row:
+                if old_pos and (player_best_row is None or player_pos.row < player_best_row):
                     player_score += 1
+                    player_best_row = player_pos.row
                     click.echo(f"  Player +1 point (forward movement)")
+                if player_best_row is None:
+                    player_best_row = player_pos.row
             elif move.type == 'trap':
                 click.echo(f"Player places trap at ({move.position.row}, {move.position.col})")
             elif move.type == 'final':
@@ -325,9 +330,12 @@ def _render_result_details(result: RoundResult, fog_of_war: bool = False) -> Non
                 old_pos = opponent_pos
                 opponent_pos = move.position
                 click.echo(f"Opponent moves to ({rot_row}, {rot_col})")
-                if old_pos and old_pos.row > opponent_pos.row:
+                if old_pos and (opponent_best_row is None or rot_row > opponent_best_row):
                     opponent_score += 1
+                    opponent_best_row = rot_row
                     click.echo(f"  Opponent +1 point (forward movement)")
+                if opponent_best_row is None:
+                    opponent_best_row = rot_row
             elif move.type == 'trap':
                 click.echo(f"Opponent places trap at ({rot_row}, {rot_col})")
             elif move.type == 'final':

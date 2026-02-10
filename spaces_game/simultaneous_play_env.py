@@ -46,6 +46,16 @@ class SimultaneousPlayEnv(gym.Env):
     5. Scores update, next round begins
 
     Episode ends after 5 rounds with game-level win/loss bonus.
+
+    IMPORTANT - Agent no-revisit rule:
+    The agent's action masks prevent revisiting cells (piece_visited_positions).
+    This is an agent optimization, NOT a game rule — human players are allowed to
+    revisit cells (it's just a bad strategy since scoring is first-visit only).
+
+    If you are integrating this agent into an app or API, you MUST track
+    piece_visited_positions when driving construction manually (outside of
+    env.step()). See play_against_agent.py _agent_build_board_blind() for
+    the reference implementation.
     """
 
     metadata = {"render_modes": ["human"]}
@@ -147,6 +157,7 @@ class SimultaneousPlayEnv(gym.Env):
         self.construction_step = 0
         self.steps_taken = 0
         self.current_piece_position: Optional[Position] = None
+        self.piece_visited_positions: set = set()
         self.trap_positions: set = set()
         self.supermove_active: bool = False
         self.supermove_position: Optional[Position] = None
@@ -197,6 +208,9 @@ class SimultaneousPlayEnv(gym.Env):
                 if self.supermove_active:
                     self.supermove_active = False
                     self.supermove_position = None
+                self.piece_visited_positions.add(
+                    f"{move.position.row},{move.position.col}"
+                )
                 self.current_piece_position = move.position
             elif move.type == "trap":
                 self.building_grid[
@@ -265,6 +279,9 @@ class SimultaneousPlayEnv(gym.Env):
         if move_type == "piece":
             if self.current_piece_position is None:
                 return row == self.board_size - 1  # First piece: bottom row
+
+            if f"{row},{col}" in self.piece_visited_positions:
+                return False  # No revisiting cells
 
             if not _is_adjacent_orthogonal(
                 self.current_piece_position, Position(row=row, col=col),
@@ -523,6 +540,7 @@ class SimultaneousPlayEnv(gym.Env):
                 if self.supermove_active:
                     self.supermove_active = False
                     self.supermove_position = None
+                self.piece_visited_positions.add(f"{row},{col}")
                 self.current_piece_position = Position(row=row, col=col)
                 reward += 0.1
                 if row == 0:

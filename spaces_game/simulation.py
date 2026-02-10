@@ -72,6 +72,8 @@ def simulate_round(
     opponent_last_step = -1  # Last sequence step executed by opponent
     player_trap_position: Optional[Position] = None
     opponent_trap_position: Optional[Position] = None
+    player_best_row: Optional[int] = None  # Most forward row reached (lowest for player)
+    opponent_best_row: Optional[int] = None  # Most forward row reached (highest for opponent, after rotation)
 
     # Track trap placements
     player_traps: dict[str, int] = {}  # position key -> step number
@@ -91,9 +93,11 @@ def simulate_round(
                 cell_content = player_board.grid[move.position.row][move.position.col]
 
             if move.type == 'piece' or cell_content == 'piece':
-                # Check for forward movement before updating position
-                if player_position is not None and player_position.row > move.position.row:
-                    player_score += 1
+                # Award point only for reaching a new best row (first time)
+                if player_best_row is None or move.position.row < player_best_row:
+                    if player_position is not None:  # Not first placement
+                        player_score += 1
+                    player_best_row = move.position.row
                 player_position = move.position
                 player_moves += 1
                 player_last_step = step
@@ -117,9 +121,11 @@ def simulate_round(
                 cell_content = opponent_board.grid[move.position.row][move.position.col]
 
             if move.type == 'piece' or cell_content == 'piece':
-                # Check for forward movement before updating position
-                if opponent_position is not None and opponent_position.row < rotated.row:
-                    opponent_score += 1
+                # Award point only for reaching a new best row (first time)
+                if opponent_best_row is None or rotated.row > opponent_best_row:
+                    if opponent_position is not None:  # Not first placement
+                        opponent_score += 1
+                    opponent_best_row = rotated.row
                 opponent_position = rotated
                 opponent_moves += 1
                 opponent_last_step = step

@@ -194,13 +194,26 @@ def _select_model(model_dir: str = "models/reverse_curriculum") -> Optional[str]
     dir_label = os.path.relpath(model_dir, ".")
     options = []
 
+    def _model_date(path: str) -> str:
+        """Get modification date string for a model file."""
+        try:
+            mtime = os.path.getmtime(path)
+            from datetime import datetime
+            return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            return ""
+
     if discovered["best"]:
-        options.append({"label": "Best model (EvalCallback)", "path": discovered["best"]})
+        date = _model_date(discovered["best"])
+        options.append({"label": f"Best model (EvalCallback)  {date}", "path": discovered["best"]})
     if discovered["final"]:
-        options.append({"label": "Final model (end of training)", "path": discovered["final"]})
+        date = _model_date(discovered["final"])
+        options.append({"label": f"Final model (end of training)  {date}", "path": discovered["final"]})
 
     for phase in sorted(discovered["phase_checkpoints"].keys()):
-        options.append({"label": f"Phase {phase} checkpoint", "path": discovered["phase_checkpoints"][phase]})
+        path = discovered["phase_checkpoints"][phase]
+        date = _model_date(path)
+        options.append({"label": f"Phase {phase} checkpoint  {date}", "path": path})
 
     step_checkpoints = discovered["step_checkpoints"]
     if step_checkpoints:
@@ -219,7 +232,8 @@ def _select_model(model_dir: str = "models/reverse_curriculum") -> Optional[str]
             sampled_steps.sort()
 
         for steps in sampled_steps:
-            options.append({"label": f"{steps:,} steps", "path": step_checkpoints[steps]})
+            date = _model_date(step_checkpoints[steps])
+            options.append({"label": f"{steps:,} steps  {date}", "path": step_checkpoints[steps]})
 
         if len(all_steps) > len(sampled_steps):
             options.append({"label": "Enter specific step count...", "path": "__custom__"})
@@ -386,6 +400,7 @@ def _agent_build_board_blind(
                     if env.supermove_active:
                         env.supermove_active = False
                         env.supermove_position = None
+                    env.piece_visited_positions.add(f"{row},{col}")
                     env.current_piece_position = Position(row=row, col=col)
                 elif move_type == "trap":
                     env.building_grid[row, col, 1] = order

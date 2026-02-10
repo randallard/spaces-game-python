@@ -205,6 +205,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
         Mirrors validation.py's is_board_playable() logic.
         """
         self.current_piece_position = None
+        self.piece_visited_positions = set()
         self.trap_positions = set()
         self.supermove_active = False
         self.supermove_position = None
@@ -226,6 +227,9 @@ class ReverseCurriculumBuilderEnv(gym.Env):
                 if self.supermove_active:
                     self.supermove_active = False
                     self.supermove_position = None
+                self.piece_visited_positions.add(
+                    f"{move.position.row},{move.position.col}"
+                )
                 self.current_piece_position = move.position
 
             elif move.type == "trap":
@@ -252,6 +256,9 @@ class ReverseCurriculumBuilderEnv(gym.Env):
             if self.current_piece_position is None:
                 # First piece: must be in bottom row
                 return row == self.board_size - 1
+
+            if f"{row},{col}" in self.piece_visited_positions:
+                return False  # No revisiting cells
 
             # Must be adjacent to current piece
             if not _is_adjacent_orthogonal(
@@ -577,6 +584,7 @@ class ReverseCurriculumBuilderEnv(gym.Env):
                     if self.supermove_active:
                         self.supermove_active = False
                         self.supermove_position = None
+                    self.piece_visited_positions.add(f"{row},{col}")
                     self.current_piece_position = Position(row=row, col=col)
 
                     # Small shaping rewards — just enough to guide placement
