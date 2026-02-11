@@ -1,0 +1,324 @@
+"""
+FastAPI inference server for Spaces Game AI agent.
+
+Provides endpoints to construct boards using trained RL models
+at various skill levels.
+"""
+
+import logging
+from contextlib import asynccontextmanager
+
+import numpy as np
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from . import config
+from .inference import (
+    build_board_for_round,
+    encode_board_for_agent,
+    is_stage3_model,
+    get_model_board_size,
+)
+from .model_registry import ModelRegistry, SKILL_LEVEL_CONFIG
+from .models import (
+    ConstructBoardRequest,
+    ConstructBoardResponse,
+    HealthResponse,
+    InfoResponse,
+)
+
+logger = logging.getLogger(__name__)
+
+# Module-level registry, initialized during startup
+registry: ModelRegistry = None  # type: ignore[assignment]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load models on startup."""
+    global registry
+    logger.info("Starting inference server...")
+    logger.info("Models dir: %s", config.INFERENCE_MODELS_DIR)
+    logger.info("Boards dir: %s", config.INFERENCE_BOARDS_DIR)
+
+    registry = ModelRegistry(
+        models_dir=config.INFERENCE_MODELS_DIR,
+        boards_dir=config.INFERENCE_BOARDS_DIR,
+    )
+    registry.discover_models()
+    registry.load_all()
+
+    if registry.supported_board_sizes:
+        logger.info(
+            "Ready! Supported board sizes: %s",
+            registry.supported_board_sizes,
+        )
+    else:
+        logger.warning(
+            "No models found in %s. Server will start but /construct-board "
+            "will return errors until models are available.",
+            config.INFERENCE_MODELS_DIR,
+        )
+
+    yield
+
+    logger.info("Shutting down inference server.")
+
+
+app = FastAPI(
+    title="Spaces Game Inference Server",
+    description="AI agent inference for the Spaces Game board construction",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.INFERENCE_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health():
+    """Health check endpoint."""
+    return HealthResponse(status="ok")
+
+
+@app.get("/info", response_model=InfoResponse)
+async def info():
+    """Get server information and loaded models."""
+    return InfoResponse(
+        loaded_models=registry.get_loaded_models_info(),
+        supported_board_sizes=registry.supported_board_sizes,
+    )
+
+
+def _convert_opponent_history_to_grids(
+    opponent_history: list,
+    board_size: int,
+) -> np.ndarray:
+    """Convert frontend opponent_history format to numpy grids.
+
+    Each entry in opponent_history is an OpponentBoardHistory with a sequence
+    of moves. We encode each one into a (board_size, board_size, 2) grid
+    using the same rotation logic as the training environment.
+
+    Args:
+        opponent_history: List of OpponentBoardHistory from the request.
+        board_size: Grid dimension.
+
+    Returns:
+        numpy array of shape (5, board_size, board_size, 2).
+    """
+    from spaces_game.types import Board, BoardMove, Position
+
+    grids = np.zeros((5, board_size, board_size, 2), dtype=np.int32)
+
+    for round_idx, board_hist in enumerate(opponent_history):
+        if round_idx >= 5:
+            break
+        if not board_hist.sequence:
+            continue
+
+        # Reconstruct a Board object so we can use encode_board_for_agent
+        sequence = []
+        str_grid = [
+            ["empty" for _ in range(board_size)]
+            for _ in range(board_size)
+        ]
+
+        for move_dict in board_hist.sequence:
+            pos = Position(row=move_dict.row, col=move_dict.col)
+            move = BoardMove(
+                position=pos,
+                type=move_dict.type,
+                order=move_dict.order,
+            )
+            sequence.append(move)
+
+            if move_dict.type in ("piece", "trap") and 0 <= move_dict.row < board_size and 0 <= move_dict.col < board_size:
+                if move_dict.type == "piece":
+                    if str_grid[move_dict.row][move_dict.col] != "trap":
+                        str_grid[move_dict.row][move_dict.col] = "piece"
+                elif move_dict.type == "trap":
+                    str_grid[move_dict.row][move_dict.col] = "trap"
+
+        # Add a final move if not present
+        if not any(m.type == "final" for m in sequence):
+            last_col = 0
+            for m in reversed(sequence):
+                if m.type != "final":
+                    last_col = m.position.col
+                    break
+            sequence.append(BoardMove(
+                position=Position(row=-1, col=last_col),
+                type="final",
+                order=len(sequence) + 1,
+            ))
+
+        board = Board(
+            boardSize=board_size,
+            grid=tuple(tuple(r) for r in str_grid),
+            sequence=tuple(sequence),
+        )
+        grids[round_idx] = encode_board_for_agent(board, board_size)
+
+    return grids
+
+
+def _board_to_response_dict(board: Board) -> dict:
+    """Convert a Board object to the response dict format.
+
+    Returns:
+        Dict with sequence, boardSize, and grid.
+    """
+    sequence = []
+    for move in board.sequence:
+        sequence.append({
+            "position": {"row": move.position.row, "col": move.position.col},
+            "type": move.type,
+            "order": move.order,
+        })
+
+    # Convert grid tuples to lists for JSON serialization
+    grid = [list(row) for row in board.grid]
+
+    return {
+        "sequence": sequence,
+        "boardSize": board.boardSize,
+        "grid": grid,
+    }
+
+
+@app.post("/construct-board", response_model=ConstructBoardResponse)
+async def construct_board(request: ConstructBoardRequest):
+    """Construct a board using the AI agent at the specified skill level."""
+    board_size = request.board_size
+    skill_level = request.skill_level.value
+
+    # Validate board size is supported
+    if board_size not in registry.supported_board_sizes:
+        if not registry.supported_board_sizes:
+            raise HTTPException(
+                status_code=503,
+                detail="No models are loaded. Train models first and restart the server.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Board size {board_size} not supported. "
+                f"Available sizes: {registry.supported_board_sizes}"
+            ),
+        )
+
+    # Get model for skill level
+    try:
+        model, uses_masks, deterministic = registry.get_model(board_size, skill_level)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    # Verify it's a Stage 3 model
+    if not is_stage3_model(model):
+        raise HTTPException(
+            status_code=500,
+            detail="Loaded model is not a Stage 3 (simultaneous play) model.",
+        )
+
+    # Get opponent pools
+    opponent_pools = registry.get_opponent_pools(board_size)
+    if not opponent_pools:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No opponent pools found for board size {board_size}.",
+        )
+
+    # Convert opponent history to numpy grids
+    try:
+        opponent_history_grids = _convert_opponent_history_to_grids(
+            request.opponent_history, board_size,
+        )
+    except Exception as e:
+        logger.error("Failed to convert opponent history: %s", e)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid opponent_history format: {e}",
+        )
+
+    # Build the board
+    try:
+        board = build_board_for_round(
+            model=model,
+            uses_masks=uses_masks,
+            board_size=board_size,
+            round_num=request.round_num,
+            agent_score=request.agent_score,
+            opponent_score=request.opponent_score,
+            opponent_history_grids=opponent_history_grids,
+            opponent_pools=opponent_pools,
+            deterministic=deterministic,
+        )
+    except ValueError as e:
+        if "observation shape" in str(e).lower():
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Board size mismatch: model was trained on a different size "
+                    f"than {board_size}."
+                ),
+            )
+        logger.error("Board construction failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Board construction failed: {e}",
+        )
+    except Exception as e:
+        logger.error("Unexpected error during board construction: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Board construction failed unexpectedly: {e}",
+        )
+
+    # Validate and build response
+    from spaces_game.validation import is_board_playable
+    valid = is_board_playable(board)
+
+    model_board_size = get_model_board_size(model)
+    model_info = {
+        "skill_level": skill_level,
+        "deterministic": deterministic,
+        "uses_masks": uses_masks,
+        "model_board_size": model_board_size,
+    }
+
+    return ConstructBoardResponse(
+        board=_board_to_response_dict(board),
+        valid=valid,
+        model_info=model_info,
+    )
+
+
+def create_app() -> FastAPI:
+    """Factory function for creating the app (useful for testing)."""
+    return app
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    uvicorn.run(
+        "inference_server.main:app",
+        host=config.INFERENCE_HOST,
+        port=config.INFERENCE_PORT,
+        reload=False,
+    )
