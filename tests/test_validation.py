@@ -172,18 +172,19 @@ class TestIsBoardPlayable:
 
     def test_valid_supermove(self):
         """Valid supermove followed by piece movement."""
-        # Grid shows 'trap' at (0,0) because trap overrides piece waypoint display
+        # Piece must visit all rows (0 and 1 for size 2), then reach goal
         board = Board(
             boardSize=2,
             grid=(
                 ('trap', 'piece'),  # (0,0) shows trap (piece goes here first, then trap placed)
-                ('empty', 'empty')
+                ('piece', 'empty')
             ),
             sequence=(
-                BoardMove(Position(0, 0), 'piece', 0),  # Piece at (0,0) - grid can show 'piece' or 'trap'
-                BoardMove(Position(0, 0), 'trap', 1),   # Supermove: trap at current position
-                BoardMove(Position(0, 1), 'piece', 2),  # Valid: piece moves out
-                BoardMove(Position(-1, 1), 'final', 3),  # Final position at row -1
+                BoardMove(Position(1, 0), 'piece', 0),  # Start at bottom row
+                BoardMove(Position(0, 0), 'piece', 1),  # Move to top row
+                BoardMove(Position(0, 0), 'trap', 2),   # Supermove: trap at current position
+                BoardMove(Position(0, 1), 'piece', 3),  # Valid: piece moves out
+                BoardMove(Position(-1, 1), 'final', 4),  # Final position at row -1
             ),
         )
 
@@ -204,6 +205,78 @@ class TestIsBoardPlayable:
         )
 
         assert not is_board_playable(board)
+
+    def test_missing_final_move(self):
+        """Board must contain a final move to reach the goal."""
+        board = Board(
+            boardSize=2,
+            grid=(
+                ('piece', 'empty'),
+                ('piece', 'empty')
+            ),
+            sequence=(
+                BoardMove(Position(1, 0), 'piece', 0),
+                BoardMove(Position(0, 0), 'piece', 1),
+                # No final move - never reaches goal
+            ),
+        )
+
+        assert not is_board_playable(board)
+
+    def test_piece_must_visit_all_rows(self):
+        """Piece must visit every row (path from bottom to top)."""
+        # Size 2 board but piece only in row 0 - missing row 1
+        board = Board(
+            boardSize=2,
+            grid=(
+                ('piece', 'empty'),
+                ('empty', 'empty')
+            ),
+            sequence=(
+                BoardMove(Position(0, 0), 'piece', 0),
+                BoardMove(Position(-1, 0), 'final', 1),
+            ),
+        )
+
+        assert not is_board_playable(board)
+
+    def test_piece_must_visit_all_rows_size3(self):
+        """Size 3: piece must visit rows 0, 1, and 2."""
+        # Only visits rows 0 and 1 - missing row 2
+        board = Board(
+            boardSize=3,
+            grid=(
+                ('piece', 'empty', 'empty'),
+                ('piece', 'empty', 'empty'),
+                ('empty', 'empty', 'empty')
+            ),
+            sequence=(
+                BoardMove(Position(1, 0), 'piece', 0),
+                BoardMove(Position(0, 0), 'piece', 1),
+                BoardMove(Position(-1, 0), 'final', 2),
+            ),
+        )
+
+        assert not is_board_playable(board)
+
+    def test_valid_full_path_size3(self):
+        """Size 3: valid board with piece visiting all rows."""
+        board = Board(
+            boardSize=3,
+            grid=(
+                ('piece', 'empty', 'empty'),
+                ('piece', 'empty', 'empty'),
+                ('piece', 'empty', 'empty')
+            ),
+            sequence=(
+                BoardMove(Position(2, 0), 'piece', 0),
+                BoardMove(Position(1, 0), 'piece', 1),
+                BoardMove(Position(0, 0), 'piece', 2),
+                BoardMove(Position(-1, 0), 'final', 3),
+            ),
+        )
+
+        assert is_board_playable(board)
 
     def test_out_of_bounds(self):
         """Position must be within board bounds."""

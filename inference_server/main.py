@@ -252,7 +252,7 @@ async def construct_board(request: ConstructBoardRequest):
 
     # Build the board
     try:
-        board = build_board_for_round(
+        board, attempts_used = build_board_for_round(
             model=model,
             uses_masks=uses_masks,
             board_size=board_size,
@@ -299,6 +299,7 @@ async def construct_board(request: ConstructBoardRequest):
     return ConstructBoardResponse(
         board=_board_to_response_dict(board),
         valid=valid,
+        attempts_used=attempts_used,
         model_info=model_info,
     )
 

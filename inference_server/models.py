@@ -67,6 +67,7 @@ class ConstructBoardResponse(BaseModel):
         description="Board with sequence, boardSize, and grid",
     )
     valid: bool = Field(default=False, description="Whether the board is playable")
+    attempts_used: int = Field(default=1, description="Number of construction attempts used")
     model_info: Optional[dict] = Field(
         None,
         description="Optional info about the model used",

@@ -57,6 +57,8 @@ def is_board_playable(board: Board) -> bool:
     - Traps must be placed adjacent to current piece position (or at current position for supermove)
     - Supermove (trap at current position) requires piece to move immediately after
     - Final move must be at row -1
+    - Sequence must contain a final move (piece must reach the goal)
+    - Piece must visit every row (0 through board_size-1)
     """
     # Must have at least one move in sequence
     if len(board.sequence) == 0:
@@ -69,6 +71,8 @@ def is_board_playable(board: Board) -> bool:
     current_position: Optional[Position] = None
     trap_positions: set[str] = set()
     supermove_position: Optional[Position] = None  # Track if last move was supermove
+    rows_with_piece: set[int] = set()  # Track rows visited by piece moves
+    has_final: bool = False
 
     # Validate each move in sequence
     for i, move in enumerate(board.sequence):
@@ -90,6 +94,7 @@ def is_board_playable(board: Board) -> bool:
             # Goal column must match piece column (adjacent move up)
             if current_position.col != col:
                 return False  # Goal must be directly above piece
+            has_final = True
             continue  # Don't check grid content for final moves
 
         # Check bounds (dynamic grid size)
@@ -122,6 +127,7 @@ def is_board_playable(board: Board) -> bool:
 
             # Update current position
             current_position = move.position
+            rows_with_piece.add(row)
 
         # Process trap moves
         if move.type == 'trap':
@@ -159,6 +165,15 @@ def is_board_playable(board: Board) -> bool:
     # (unless goal is reached, but that's already handled above)
     if supermove_position is not None:
         return False  # Sequence cannot end with supermove without piece moving
+
+    # Must reach the goal (sequence must contain a final move)
+    if not has_final:
+        return False
+
+    # Piece must visit every row (path from bottom to top)
+    required_rows = set(range(size))
+    if rows_with_piece != required_rows:
+        return False
 
     return True
 

@@ -147,7 +147,7 @@ def build_board_for_round(
     opponent_pools: List[str],
     deterministic: bool = True,
     max_retries: int = 5,
-) -> Board:
+) -> Tuple[Board, int]:
     """Have a Stage 3 agent build a board blind (simultaneous play).
 
     Manually drives construction using the SimultaneousPlayEnv's observation
@@ -167,7 +167,7 @@ def build_board_for_round(
         max_retries: Maximum attempts to produce a valid board.
 
     Returns:
-        The constructed Board (may be invalid if all retries fail).
+        Tuple of (Board, attempts_used). Board may be invalid if all retries fail.
     """
     max_steps = board_size * 10
     env = SimultaneousPlayEnv(
@@ -217,6 +217,7 @@ def build_board_for_round(
                     if env.supermove_active:
                         env.supermove_active = False
                         env.supermove_position = None
+                    env.piece_visited_positions.add(f"{row},{col}")
                     env.current_piece_position = Position(row=row, col=col)
                 elif move_type == "trap":
                     env.building_grid[row, col, 1] = order
@@ -235,8 +236,8 @@ def build_board_for_round(
             env.close()
             if attempt > 0:
                 logger.info("Valid board produced on attempt %d", attempt + 1)
-            return board
+            return board, attempt + 1
 
     env.close()
     logger.warning("No valid board after %d attempts", max_retries)
-    return board
+    return board, max_retries
