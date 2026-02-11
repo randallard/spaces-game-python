@@ -573,24 +573,31 @@ python examples/play_vs_agent.py \
 
 ## ⚡ Quick Start: Current Status
 
-### Retrain Size 3 (with scoring fix + no-revisit masking):
+### Retrain Both Sizes (fresh, with all fixes):
 
-The existing size 3 model was trained before two critical fixes (Feb 9, 2026):
-- First-visit forward movement scoring (prevents oscillation farming)
-- No-revisit action masking (prevents wasteful revisits)
+Previous models were trained before three critical fixes:
+- First-visit forward movement scoring (prevents oscillation farming) — Feb 9
+- No-revisit action masking (prevents wasteful revisits) — Feb 9
+- Full-path board validation: piece must visit every row + reach goal (prevents trivial 1-step boards) — Feb 11
 
-Retraining will also produce difficulty checkpoints automatically.
+Models must be retrained from scratch (no `--resume`) since the validation rules changed. The old models learned they could build incomplete boards and get `valid_board: True`.
 
 ```bash
-# Retrain size 3 with difficulty checkpoints
+# Size 2 - fresh start with board library
+python examples/train_simultaneous.py \
+    --size 2 --board-library new_boards_2.json \
+    --timesteps 5000000 --min-phase-steps 100000
+
+# Size 3 - fresh start with board library
 python examples/train_simultaneous.py \
     --size 3 --board-library new_boards_3.json \
-    --timesteps 3000000 --min-phase-steps 100000
+    --timesteps 5000000 --min-phase-steps 100000
 
 # Monitor
+tensorboard --logdir logs/size2_stage3/
 tensorboard --logdir logs/size3_stage3/
 
-# Produces: models/size3/stage3/difficulty/{beginner,intermediate,expert}.zip
+# Produces: models/size{N}/stage3/difficulty/{beginner,intermediate,expert}.zip
 ```
 
 ### Play Against the Agent:
@@ -626,8 +633,9 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 ### What's Next:
 
 **Immediate**:
-- Retrain size 3 Stage 3 with scoring fix + no-revisit masking + difficulty checkpoints
+- Retrain size 2 + size 3 from scratch with all three fixes (5M steps each)
 - Play-test beginner/intermediate/expert to verify skill separation
+- Deploy retrained models to inference server and verify via Node frontend
 
 **Short-term**:
 - Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
@@ -671,4 +679,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Stage 3 complete for size 2 + size 3, but needs retraining with scoring fix + no-revisit masking (Feb 9, 2026).** Difficulty-level training infrastructure ready. Next: retrain, then Stage 4 (fog of war). Key open question: how to represent the "trap exists but location unknown" signal in the observation space.
+Current Status: **Retraining size 2 + size 3 from scratch (Feb 11, 2026).** Three fixes require fresh training: first-visit scoring, no-revisit masking, full-path board validation. 5M steps each with board libraries. Inference server and Node frontend ready with retry/forfeit handling. Next after retraining: Stage 4 (fog of war). Key open question: how to represent the "trap exists but location unknown" signal in the observation space.

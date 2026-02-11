@@ -177,19 +177,24 @@ See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, an
 - **Stage 1 - Board Construction**: 100% optimal counter-play on 8 curated size-2 boards
 - **Stage 2 - Reverse Curriculum**: Obsolete (replaced by construction scaffolding in Stage 3)
 - **Stage 3 - Simultaneous 5-Round Play**: Blind board construction + opponent adaptation
-  - Size 2: Complete (all opponent phases)
-  - Size 3: Complete (construction C0-C6 + opponent O0-O5)
-  - Needs retraining with scoring fix + no-revisit masking (Feb 2026)
+  - Retraining from scratch (Feb 11, 2026) with three fixes:
+    first-visit scoring, no-revisit masking, full-path board validation
+  - 5M steps each, size 2 and size 3, with board libraries
 
-### Current: Difficulty-Level Training
+### Current: Retraining with Full-Path Validation
 
-Training produces beginner/intermediate/expert checkpoints at opponent phase milestones:
+Boards must now visit every row and reach the goal to pass validation. Training produces beginner/intermediate/expert checkpoints at opponent phase milestones:
 
 ```bash
-# Train with difficulty checkpoints (100k min steps per phase for separation)
+# Size 2
+python examples/train_simultaneous.py \
+    --size 2 --board-library new_boards_2.json \
+    --timesteps 5000000 --min-phase-steps 100000
+
+# Size 3
 python examples/train_simultaneous.py \
     --size 3 --board-library new_boards_3.json \
-    --timesteps 3000000 --min-phase-steps 100000
+    --timesteps 5000000 --min-phase-steps 100000
 ```
 
 ### Next: Stage 4 (Fog of War)
