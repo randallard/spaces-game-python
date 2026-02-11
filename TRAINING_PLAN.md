@@ -573,43 +573,63 @@ python examples/play_vs_agent.py \
 
 ## ⚡ Quick Start: Current Status
 
-### Size 2 Retraining (with trap limit):
+### Retrain Size 3 (with scoring fix + no-revisit masking):
+
+The existing size 3 model was trained before two critical fixes (Feb 9, 2026):
+- First-visit forward movement scoring (prevents oscillation farming)
+- No-revisit action masking (prevents wasteful revisits)
+
+Retraining will also produce difficulty checkpoints automatically.
+
 ```bash
-# 1. Implement trap limit (code change required first)
+# Retrain size 3 with difficulty checkpoints
+python examples/train_simultaneous.py \
+    --size 3 --board-library new_boards_3.json \
+    --timesteps 3000000 --min-phase-steps 100000
 
-# 2. Retrain Stage 2: reverse curriculum construction
-python examples/train_reverse_curriculum.py --size 2 --timesteps 500000
+# Monitor
+tensorboard --logdir logs/size3_stage3/
 
-# 3. Retrain Stage 3: simultaneous 5-round play
-python examples/train_simultaneous.py --size 2 --timesteps 1000000
-
-# 4. Verify: play a 5-round game against the agent
-python examples/play_against_agent.py --size 2 --rounds 5
+# Produces: models/size3/stage3/difficulty/{beginner,intermediate,expert}.zip
 ```
 
 ### Play Against the Agent:
 ```bash
-# 5-round game (Stage 3 model auto-detected)
-python examples/play_against_agent.py --size 2 --rounds 5
+# Difficulty selection (after training)
+python examples/play_against_agent.py --size 3 --difficulty beginner
+python examples/play_against_agent.py --size 3 --difficulty intermediate
+python examples/play_against_agent.py --size 3 --difficulty expert
 
-# With fog of war
-python examples/play_against_agent.py --size 2 --rounds 5 --fog
+# Stochastic + beginner = easiest; deterministic + expert = hardest
+python examples/play_against_agent.py --size 3 --difficulty beginner --stochastic
+python examples/play_against_agent.py --size 3 --difficulty expert
 
-# Single-round play
-python examples/play_against_agent.py --size 2
-
-# Size 3
+# Interactive model selection (auto-discovers difficulty models)
 python examples/play_against_agent.py --size 3 --board-library new_boards_3.json
+
+# With fog of war (display-only, not yet in training)
+python examples/play_against_agent.py --size 3 --rounds 5 --fog
 ```
+
+### Difficulty Levels:
+
+Training saves named checkpoints at opponent phase milestones:
+
+| Difficulty | Saved after | What it knows |
+|------------|-------------|---------------|
+| `beginner` | O0 complete | Builds valid boards, beats simple straight-path opponents |
+| `intermediate` | O2 complete | Uses traps, handles mixed simple + one-trap opponents |
+| `expert` | Training end | Full strategy against all opponent types |
+
+Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep training and difficulty levels are well-separated.
 
 ### What's Next:
 
-**In progress**:
-- Size 3 Stage 3 training with construction scaffolding (500k steps)
-- Monitor: `tensorboard --logdir logs/size3_stage3/`
+**Immediate**:
+- Retrain size 3 Stage 3 with scoring fix + no-revisit masking + difficulty checkpoints
+- Play-test beginner/intermediate/expert to verify skill separation
 
 **Short-term**:
-- Evaluate size 3 Stage 3 results, play against agent
 - Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
 - Train Stage 4 on size 2 first, then size 3
 
@@ -651,4 +671,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Stage 3 complete for size 2 + size 3.** Stage 4 (fog of war) is next. Key open question: how to represent the "trap exists but location unknown" signal in the observation space.
+Current Status: **Stage 3 complete for size 2 + size 3, but needs retraining with scoring fix + no-revisit masking (Feb 9, 2026).** Difficulty-level training infrastructure ready. Next: retrain, then Stage 4 (fog of war). Key open question: how to represent the "trap exists but location unknown" signal in the observation space.

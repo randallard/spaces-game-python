@@ -37,6 +37,15 @@ import gymnasium as gym
 from spaces_game import SimultaneousPlayEnv
 
 
+# Map opponent phase completions to difficulty checkpoint names.
+# When the agent finishes training on phase N, save as the corresponding difficulty.
+DIFFICULTY_CHECKPOINTS = {
+    0: "beginner",       # Can build valid boards, beats simple opponents
+    2: "intermediate",   # Handles traps and mixed opponents
+}
+# "expert" is saved at phase 5 completion OR at training end (whichever comes last)
+
+
 def mask_fn(env: gym.Env) -> np.ndarray:
     """Get action masks from the environment."""
     return env.action_masks()
@@ -296,20 +305,39 @@ class OpponentProgressionCallback(BaseCallback):
                         print(f"  Warning: Could not update eval env: {e}")
 
             # Save checkpoint
-            ckpt_path = f"{self.output_dir}/phase_{self.current_phase-1}_checkpoint.zip"
+            completed_phase = self.current_phase - 1
+            ckpt_path = f"{self.output_dir}/phase_{completed_phase}_checkpoint.zip"
             self.model.save(ckpt_path)
 
+            # Save named difficulty checkpoint if this phase is a milestone
+            if completed_phase in DIFFICULTY_CHECKPOINTS:
+                diff_name = DIFFICULTY_CHECKPOINTS[completed_phase]
+                diff_dir = f"{self.output_dir}/difficulty"
+                os.makedirs(diff_dir, exist_ok=True)
+                diff_path = f"{diff_dir}/{diff_name}.zip"
+                self.model.save(diff_path)
+                if self.verbose >= 1:
+                    print(f"  Difficulty checkpoint saved: {diff_path}")
+
             if self.verbose >= 1:
-                print(f"\n  OPPONENT PHASE ADVANCED: {self.current_phase-1} -> {self.current_phase}")
+                print(f"\n  OPPONENT PHASE ADVANCED: {completed_phase} -> {self.current_phase}")
                 print(f"  Checkpoint saved: {ckpt_path}")
 
     def _on_training_end(self) -> None:
+        # Save expert difficulty checkpoint at training end
+        diff_dir = f"{self.output_dir}/difficulty"
+        os.makedirs(diff_dir, exist_ok=True)
+        expert_path = f"{diff_dir}/expert.zip"
+        self.model.save(expert_path)
+        if self.verbose >= 1:
+            print(f"\nExpert difficulty checkpoint saved: {expert_path}")
+
         history_path = f"{self.output_dir}/phase_history.json"
         os.makedirs(os.path.dirname(history_path), exist_ok=True)
         with open(history_path, "w") as f:
             json.dump(self.phase_history, f, indent=2)
         if self.verbose >= 1:
-            print(f"\nPhase history saved to: {history_path}")
+            print(f"Phase history saved to: {history_path}")
 
 
 def make_env(
@@ -350,6 +378,7 @@ def train(
     board_library_path: Optional[str] = None,
     resume_from: Optional[str] = None,
     output_dir: Optional[str] = None,
+    min_phase_steps: int = 10_000,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults
@@ -382,6 +411,7 @@ def train(
     print(f"Eval frequency:    {eval_freq:,} steps")
     print(f"Save frequency:    {save_freq:,} steps")
     print(f"Max steps/round:   {max_construction_steps}")
+    print(f"Min phase steps:   {min_phase_steps:,}")
     print(f"Output directory:  {output_dir}")
     if board_library_path:
         print(f"Board library:     {board_library_path} (construction scaffolding)")
@@ -445,7 +475,7 @@ def train(
         win_rate_threshold=0.70,
         valid_rate_threshold=0.90,
         construction_valid_threshold=0.95,
-        min_steps_per_phase=10000,
+        min_steps_per_phase=min_phase_steps,
         max_phase=max_phase,
         board_size=board_size,
         opponent_pools=opponent_pools,
@@ -572,6 +602,10 @@ if __name__ == "__main__":
         "--output-dir", type=str, default=None,
         help="Output directory (default: models/size{N}/stage3)",
     )
+    parser.add_argument(
+        "--min-phase-steps", type=int, default=10_000,
+        help="Minimum steps per curriculum phase before advancing (default: 10,000)",
+    )
 
     args = parser.parse_args()
 
@@ -589,4 +623,5 @@ if __name__ == "__main__":
         board_library_path=args.board_library,
         resume_from=args.resume,
         output_dir=args.output_dir,
+        min_phase_steps=args.min_phase_steps,
     )

@@ -1,4 +1,6 @@
-# RL Training Guide for Spaces Game
+# RL Training Guide for Spaces Game (Stage 0 Era)
+
+> **Note:** This guide covers Stage 0 (deck selection) training with `train_basic.py`. For current training workflows (Stage 3 simultaneous play, construction scaffolding, difficulty levels), see [TRAINING_PLAN.md](TRAINING_PLAN.md). For the play script and interactive model selection, see the [play commands in TRAINING_PLAN.md](TRAINING_PLAN.md#-quick-start-current-status).
 
 Guide for training RL agents on the **tenx-rltec** training machine.
 

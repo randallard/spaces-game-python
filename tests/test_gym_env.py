@@ -33,7 +33,7 @@ class TestEnvironmentBasics:
         assert "opponent_history" in obs
 
         # Check initial values
-        assert obs["round"] == 1
+        assert obs["round"] == 0
         assert obs["score_diff"][0] == 0
         assert obs["agent_score"][0] == 0
         assert obs["opponent_score"][0] == 0
@@ -53,7 +53,7 @@ class TestEnvironmentBasics:
         obs, reward, terminated, truncated, info = env.step(0)
 
         # Check observation updated
-        assert obs["round"] == 2  # Moved to next round
+        assert obs["round"] == 1  # 0-indexed: round 2 internally -> obs 1
         assert obs["agent_history"][0] == 0  # First board selected
         assert obs["opponent_history"][0] >= 0  # Opponent selected something
 
@@ -90,7 +90,7 @@ class TestEnvironmentBasics:
             if i < 4:
                 # Not done yet
                 assert not terminated
-                assert obs["round"] == i + 2
+                assert obs["round"] == i + 1  # 0-indexed obs
             else:
                 # Episode should end after round 5
                 assert terminated

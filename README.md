@@ -169,58 +169,49 @@ npm run cli -- generate-boards --size 3 --limit 500 --output ../spaces-game-pyth
 
 ## Training Progress
 
+See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, and training commands.
+
 ### Completed Stages
 
-- **Stage 0 - Deck Selection**: Agent learns board evaluation and matchup strategy
+- **Stage 0 - Deck Selection**: Board evaluation and matchup strategy
 - **Stage 1 - Board Construction**: 100% optimal counter-play on 8 curated size-2 boards
-  - Model: `models/construction/best/best_model.zip`
-- **Stage 2 - Reverse Curriculum Construction**: Agent builds valid boards from scratch
-  - **Size 2**: `models/stage2_optimized/ppo_stage2_final.zip`
-  - **Size 3**: `models/size3/stage2/ppo_stage2_final.zip`
+- **Stage 2 - Reverse Curriculum**: Obsolete (replaced by construction scaffolding in Stage 3)
+- **Stage 3 - Simultaneous 5-Round Play**: Blind board construction + opponent adaptation
+  - Size 2: Complete (all opponent phases)
+  - Size 3: Complete (construction C0-C6 + opponent O0-O5)
+  - Needs retraining with scoring fix + no-revisit masking (Feb 2026)
+
+### Current: Difficulty-Level Training
+
+Training produces beginner/intermediate/expert checkpoints at opponent phase milestones:
+
+```bash
+# Train with difficulty checkpoints (100k min steps per phase for separation)
+python examples/train_simultaneous.py \
+    --size 3 --board-library new_boards_3.json \
+    --timesteps 3000000 --min-phase-steps 100000
+```
+
+### Next: Stage 4 (Fog of War)
+
+Partial observability — agent only sees opponent moves up to their last executed step.
 
 ### Play Against the Agent
 
 ```bash
-# Size 2
-python examples/play_against_agent.py --size 2 --model models/stage2_optimized/ppo_stage2_final.zip
+# With difficulty selection (after training produces checkpoints)
+python examples/play_against_agent.py --size 3 --difficulty beginner
+python examples/play_against_agent.py --size 3 --difficulty expert
 
-# Size 3
-python examples/play_against_agent.py --size 3 --board-library new_boards_3.json --model models/size3/stage2/ppo_stage2_final.zip
+# Interactive model selection
+python examples/play_against_agent.py --size 3 --board-library new_boards_3.json
+
+# With fog of war (display-only, not yet in training)
+python examples/play_against_agent.py --size 3 --rounds 5 --fog
+
+# Stochastic mode (agent samples from policy for varied play)
+python examples/play_against_agent.py --size 3 --difficulty beginner --stochastic
 ```
-
-### Next Stages
-
-- **Stage 3**: Fog of war (partial observability + inference)
-- **Stage 4**: Self-play (meta-game, emergent strategies)
-
-## Gymnasium Environment Details
-
-### Observation Space
-
-The environment uses **partial observability** (opponent's current board is hidden):
-
-```python
-observation = {
-    'round': int,              # Current round (1-5)
-    'score_diff': float,       # Score differential
-    'my_board_history': [int], # Indices of boards I used
-    'opp_board_history': [int],# Indices opponent used (revealed after round)
-    'who_picks_first': int,    # 0=me, 1=opponent
-}
-```
-
-### Action Space
-
-```python
-action = int  # Select board index from deck (0-9)
-```
-
-### Reward Shaping
-
-- **Win**: +10
-- **Loss**: -10
-- **Tie**: 0
-- **Score differential**: ±1 per point difference
 
 ## Parity with TypeScript
 

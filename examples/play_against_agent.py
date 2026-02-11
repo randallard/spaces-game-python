@@ -687,9 +687,34 @@ def play(
     toggle_flag = "--stochastic" if deterministic else "--deterministic"
     click.echo(f"  Mode: {click.style(mode_str, fg=mode_color)} (use {toggle_flag} to change)")
 
-    # Select model if not provided via --model
+    # Select model if not provided via --model or --difficulty
     if model_path is None:
-        model_path = _select_model()
+        # Check for difficulty models first
+        diff_dir = Path(f"models/size{board_size}/stage3/difficulty")
+        available_difficulties = []
+        if diff_dir.exists():
+            for level in ["beginner", "intermediate", "expert"]:
+                if (diff_dir / f"{level}.zip").exists():
+                    available_difficulties.append(level)
+
+        if available_difficulties:
+            click.echo(click.style("\n  Difficulty levels available:", bold=True))
+            click.echo()
+            for i, level in enumerate(available_difficulties):
+                click.echo(f"    {i}) {level.capitalize()}")
+            click.echo(f"    {len(available_difficulties)}) Choose specific model instead...")
+            click.echo()
+            try:
+                idx = click.prompt("  Select difficulty #", type=int, default=0)
+                if 0 <= idx < len(available_difficulties):
+                    model_path = str(diff_dir / f"{available_difficulties[idx]}.zip")
+                else:
+                    model_path = _select_model()
+            except (ValueError, KeyboardInterrupt):
+                model_path = _select_model()
+        else:
+            model_path = _select_model()
+
         if model_path is None:
             sys.exit(1)
     elif not Path(model_path).exists():
@@ -912,13 +937,23 @@ if __name__ == "__main__":
         "--fog", action="store_true",
         help="Enable fog of war (hide opponent traps you didn't hit)",
     )
+    parser.add_argument(
+        "--difficulty", type=str, default=None,
+        choices=["beginner", "intermediate", "expert"],
+        help="Difficulty level (auto-selects model from models/size{N}/stage3/difficulty/)",
+    )
 
     args = parser.parse_args()
     deterministic = not args.stochastic
 
+    # Resolve difficulty to model path
+    model_path = args.model
+    if args.difficulty and model_path is None:
+        model_path = f"models/size{args.size}/stage3/difficulty/{args.difficulty}.zip"
+
     play(
         board_size=args.size,
-        model_path=args.model,
+        model_path=model_path,
         stage1_model_path=args.stage1_model,
         board_library_path=args.board_library,
         deterministic=deterministic,
