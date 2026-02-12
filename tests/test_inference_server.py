@@ -126,7 +126,7 @@ class TestConstructBoardEndpoint:
         valid_board = _make_valid_board(2)
 
         with patch("inference_server.main.is_stage3_model", return_value=True), \
-             patch("inference_server.main.build_board_for_round", return_value=valid_board), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)), \
              patch("inference_server.main.get_model_board_size", return_value=2):
 
             from inference_server.main import app
@@ -209,7 +209,7 @@ class TestConstructBoardEndpoint:
         valid_board = _make_valid_board(2)
 
         with patch("inference_server.main.is_stage3_model", return_value=True), \
-             patch("inference_server.main.build_board_for_round", return_value=valid_board) as mock_build, \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
              patch("inference_server.main.get_model_board_size", return_value=2):
 
             from inference_server.main import app
@@ -249,7 +249,7 @@ class TestConstructBoardEndpoint:
         valid_board = _make_valid_board(2)
 
         with patch("inference_server.main.is_stage3_model", return_value=True), \
-             patch("inference_server.main.build_board_for_round", return_value=valid_board), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)), \
              patch("inference_server.main.get_model_board_size", return_value=2):
 
             from inference_server.main import app
@@ -281,6 +281,89 @@ class TestConstructBoardEndpoint:
 # ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
+
+class TestTestFailSkillLevel:
+    """Tests for the test_fail skill level that always returns invalid boards."""
+
+    def test_returns_200_with_valid_false(self, mock_registry):
+        """test_fail should return HTTP 200 with valid=False."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "skill_level": "test_fail",
+            })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is False
+        assert data["attempts_used"] == 3
+        assert data["model_info"]["skill_level"] == "test_fail"
+
+    def test_does_not_call_get_model(self, mock_registry):
+        """test_fail should short-circuit without looking up a model."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "skill_level": "test_fail",
+            })
+
+        assert response.status_code == 200
+        registry.get_model.assert_not_called()
+
+    def test_works_with_no_models_loaded(self):
+        """test_fail should work even when no models are loaded."""
+        registry, _ = _create_mock_registry(board_sizes=[])
+        registry.supported_board_sizes = []
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 4,
+                "round_num": 0,
+                "skill_level": "test_fail",
+            })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is False
+
+    def test_response_board_has_correct_structure(self, mock_registry):
+        """test_fail board should have sequence, boardSize, and grid."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 3,
+                "round_num": 0,
+                "skill_level": "test_fail",
+            })
+
+        data = response.json()
+        board = data["board"]
+        assert "sequence" in board
+        assert "boardSize" in board
+        assert "grid" in board
+        assert board["boardSize"] == 3
+        assert len(board["grid"]) == 3
+        assert len(board["grid"][0]) == 3
+
 
 class TestCORS:
 

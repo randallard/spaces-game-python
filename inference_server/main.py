@@ -194,11 +194,38 @@ def _board_to_response_dict(board: Board) -> dict:
     }
 
 
+def _build_test_fail_board(board_size: int) -> dict:
+    """Build a structurally valid but unplayable board for test_fail skill level.
+
+    Returns a board dict with a single piece in the bottom-left corner,
+    no final move, and no complete path — guaranteed to fail validation.
+    """
+    grid = [["empty"] * board_size for _ in range(board_size)]
+    grid[board_size - 1][0] = "piece"
+
+    return {
+        "sequence": [
+            {"position": {"row": board_size - 1, "col": 0}, "type": "piece", "order": 1},
+        ],
+        "boardSize": board_size,
+        "grid": grid,
+    }
+
+
 @app.post("/construct-board", response_model=ConstructBoardResponse)
 async def construct_board(request: ConstructBoardRequest):
     """Construct a board using the AI agent at the specified skill level."""
     board_size = request.board_size
     skill_level = request.skill_level.value
+
+    # test_fail: short-circuit with an invalid board (no model needed)
+    if skill_level == "test_fail":
+        return ConstructBoardResponse(
+            board=_build_test_fail_board(board_size),
+            valid=False,
+            attempts_used=3,
+            model_info={"skill_level": "test_fail"},
+        )
 
     # Validate board size is supported
     if board_size not in registry.supported_board_sizes:

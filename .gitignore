@@ -62,7 +62,13 @@ data/*_large.json
 
 # Training artifacts (symlinks to /mnt/storage/ml/)
 logs
-models
+# Ignore models dir contents, but keep deployed stage3 zips
+models/*
+!models/size*/
+models/size*/*
+!models/size*/stage3/
+models/size*/stage3/*
+!models/size*/stage3/*.zip
 
 # Evaluation data
 eval/

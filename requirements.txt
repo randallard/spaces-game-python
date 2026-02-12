@@ -4,6 +4,12 @@ typing-extensions>=4.5.0
 
 # RL/ML
 gymnasium>=0.29.0
+stable-baselines3>=2.0.0
+sb3-contrib>=2.0.0
+
+# PyTorch CPU-only (much smaller than CUDA build)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 
 # Inference server
 fastapi>=0.104.0

@@ -16,6 +16,7 @@ class SkillLevel(str, Enum):
     intermediate_plus = "intermediate_plus"
     advanced = "advanced"
     advanced_plus = "advanced_plus"
+    test_fail = "test_fail"
 
 
 class MoveDict(BaseModel):
