@@ -12,6 +12,8 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from spaces_game.types import Board, BoardMove, Position
+
 from . import config
 from .inference import (
     build_board_for_round,
@@ -114,8 +116,6 @@ def _convert_opponent_history_to_grids(
     Returns:
         numpy array of shape (5, board_size, board_size, 2).
     """
-    from spaces_game.types import Board, BoardMove, Position
-
     grids = np.zeros((5, board_size, board_size, 2), dtype=np.int32)
 
     for round_idx, board_hist in enumerate(opponent_history):
