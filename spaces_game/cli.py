@@ -395,7 +395,8 @@ def _render_result_details(result: RoundResult, fog_of_war: bool = False) -> Non
 @click.option("--size", type=int, help="Board size for interactive mode (2-100)")
 @click.option("--start-col", type=int, help="Starting column for interactive mode")
 @click.option("--show-all", is_flag=True, help="Show all opponent traps (not just ones you hit)")
-def test(board_file: Optional[str], player_index: int, opponent_index: int, interactive: bool, size: Optional[int], start_col: Optional[int], show_all: bool):
+@click.option("--save-to", type=click.Path(), help="File to save board to in interactive mode (appends if exists)")
+def test(board_file: Optional[str], player_index: int, opponent_index: int, interactive: bool, size: Optional[int], start_col: Optional[int], show_all: bool, save_to: Optional[str]):
     """
     Run a single simulation test with detailed output.
 
@@ -448,17 +449,25 @@ def test(board_file: Optional[str], player_index: int, opponent_index: int, inte
         click.echo(json.dumps(board_dict, indent=2))
         click.echo()
 
-        # Prompt to save board
-        if click.confirm('Would you like to save this board?', default=True):
-            import os
-            default_filename = f"board_size_{board.boardSize}.json"
-            save_path = click.prompt('Save to file', default=default_filename, type=str)
+        # Save board
+        import os
+        if save_to:
+            should_save = True
+            save_path = save_to
+        else:
+            should_save = click.confirm('Would you like to save this board?', default=True)
+            save_path = None
+            if should_save:
+                default_filename = f"board_size_{board.boardSize}.json"
+                save_path = click.prompt('Save to file', default=default_filename, type=str)
+
+        if should_save and save_path:
 
             try:
                 # Check if file exists and load existing boards
                 existing_boards = []
                 if os.path.exists(save_path):
-                    if click.confirm(f'File {save_path} already exists. Append to it?', default=True):
+                    if save_to or click.confirm(f'File {save_path} already exists. Append to it?', default=True):
                         try:
                             with open(save_path, 'r') as f:
                                 existing_data = json.load(f)

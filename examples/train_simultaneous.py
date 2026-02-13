@@ -5,16 +5,17 @@ The agent constructs a board each round without seeing the opponent's board.
 After simulation, the opponent's full board is revealed. The agent must learn
 to adapt across rounds based on opponent patterns.
 
-Progressive opponent curriculum:
-  - Phase 0: Simple boards only (straight paths, no traps)
-  - Phase 1: One-trap boards
-  - Phase 2: Simple + one-trap mixed
-  - Phase 3: Supermove boards
-  - Phase 4: All board types mixed
+Progressive opponent curriculum is built dynamically from the board pool files
+in boards/sizeN/. Files are ordered by numeric prefix if present (e.g.
+00_simple.json, 01_one_trap.json), otherwise by a known legacy order
+(simple, one_trap, super_move, super_move_counter), with unknown files last.
+
+Phases progress: each pool solo, then cumulative mixes, then all pools.
 
 Usage:
     python examples/train_simultaneous.py --size 2
     python examples/train_simultaneous.py --size 2 --timesteps 500000
+    python examples/train_simultaneous.py --size 4 --board-library new_boards_4.json
     python examples/train_simultaneous.py --size 2 --board-pools boards/size2/simple.json,boards/size2/one_trap.json
 
 Monitor with:
@@ -22,10 +23,11 @@ Monitor with:
 """
 
 import os
+import re
 import json
 import numpy as np
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 from sb3_contrib.common.wrappers import ActionMasker
@@ -35,6 +37,92 @@ from stable_baselines3.common.monitor import Monitor
 import gymnasium as gym
 
 from spaces_game import SimultaneousPlayEnv
+
+
+# Legacy ordering for pool files without numeric prefixes.
+LEGACY_POOL_ORDER = ["simple", "one_trap", "super_move", "super_move_counter"]
+
+
+def discover_pools(board_size: int) -> List[str]:
+    """
+    Discover all .json board pool files in boards/sizeN/.
+
+    Sorting rules:
+    - Files starting with a digit (e.g. 00_simple.json) sort by their numeric
+      prefix.
+    - Files without a numeric prefix sort by LEGACY_POOL_ORDER, with unknown
+      names appended alphabetically after.
+
+    Returns list of paths sorted in curriculum order.
+    """
+    pool_dir = Path(f"boards/size{board_size}")
+    if not pool_dir.is_dir():
+        return []
+
+    numbered = []   # (number, path)
+    legacy = []     # (order_index, path)
+    unknown = []    # (stem, path)
+
+    for p in pool_dir.glob("*.json"):
+        match = re.match(r'^(\d+)', p.stem)
+        if match:
+            numbered.append((int(match.group(1)), str(p)))
+        elif p.stem in LEGACY_POOL_ORDER:
+            legacy.append((LEGACY_POOL_ORDER.index(p.stem), str(p)))
+        else:
+            unknown.append((p.stem, str(p)))
+
+    # If any files have numeric prefixes, use that ordering for all numbered
+    # files, then append any non-numbered legacy/unknown files after.
+    numbered.sort(key=lambda x: x[0])
+    legacy.sort(key=lambda x: x[0])
+    unknown.sort(key=lambda x: x[0])
+
+    pools = [path for _, path in numbered]
+    pools += [path for _, path in legacy]
+    pools += [path for _, path in unknown]
+    return pools
+
+
+def build_phase_map(num_pools: int) -> Dict[int, List[int]]:
+    """
+    Build a progressive opponent phase map for the given number of pools.
+
+    Pattern:
+    - Phase 0: pool 0 solo
+    - Phase 1: pool 1 solo
+    - Phase 2: pools 0+1 mixed
+    - Phase 3: pool 2 solo
+    - Phase 4: pools 0+1+2 mixed
+    - ...
+    - Final phase: all pools mixed
+
+    For each pool after the first, we add two phases: solo then cumulative mix.
+    Single pool gets just one phase.
+    """
+    if num_pools == 0:
+        return {0: [0]}
+
+    if num_pools == 1:
+        return {0: [0]}
+
+    phase_map: Dict[int, List[int]] = {}
+    phase = 0
+
+    # Phase 0: first pool solo
+    phase_map[phase] = [0]
+    phase += 1
+
+    # For each subsequent pool: solo phase, then cumulative mix
+    for i in range(1, num_pools):
+        # Solo phase for this pool
+        phase_map[phase] = [i]
+        phase += 1
+        # Cumulative mix of all pools seen so far
+        phase_map[phase] = list(range(i + 1))
+        phase += 1
+
+    return phase_map
 
 
 # Map opponent phase completions to difficulty checkpoint names.
@@ -77,6 +165,7 @@ class OpponentProgressionCallback(BaseCallback):
         board_library_path: Optional[str] = None,
         eval_callback_env: Optional[DummyVecEnv] = None,
         output_dir: str = "models/stage3",
+        phase_map: Optional[Dict[int, List[int]]] = None,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -115,6 +204,7 @@ class OpponentProgressionCallback(BaseCallback):
             opponent_phase=0,
             board_library_path=board_library_path,
             max_construction_steps=max_construction_steps,
+            phase_map=phase_map,
         )
         # Start eval env with scaffolding if in construction mode
         if self.in_construction_mode:
@@ -349,6 +439,7 @@ def make_env(
     max_construction_steps: int = 20,
     board_library_path: Optional[str] = None,
     scaffolding_moves_to_remove: int = -1,
+    phase_map: Optional[Dict[int, List[int]]] = None,
 ):
     """Create a single environment instance with action masking."""
     def _init():
@@ -358,6 +449,7 @@ def make_env(
             opponent_phase=opponent_phase,
             max_construction_steps=max_construction_steps,
             board_library_path=board_library_path,
+            phase_map=phase_map,
         )
         if scaffolding_moves_to_remove >= 0:
             env.set_scaffolding(scaffolding_moves_to_remove)
@@ -381,21 +473,19 @@ def train(
     min_phase_steps: int = 10_000,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
-    # Defaults
+    # Defaults — auto-discover pools from boards/sizeN/
     if opponent_pools is None:
-        base = f"boards/size{board_size}"
-        opponent_pools = [f"{base}/simple.json"]
-        # Auto-discover additional pools
-        for name in ["one_trap", "super_move", "super_move_counter"]:
-            path = f"{base}/{name}.json"
-            if Path(path).exists():
-                opponent_pools.append(path)
+        opponent_pools = discover_pools(board_size)
+        if not opponent_pools:
+            print(f"ERROR: No board pools found in boards/size{board_size}/")
+            return
 
     if output_dir is None:
         output_dir = f"models/size{board_size}/stage3"
 
     max_construction_steps = board_size * 10
-    max_phase = min(len(opponent_pools) + 1, len(DEFAULT_PHASE_MAP))
+    phase_map = build_phase_map(len(opponent_pools))
+    max_phase = max(phase_map.keys())
 
     # Determine initial scaffolding
     initial_scaffolding = -1  # disabled by default
@@ -422,7 +512,7 @@ def train(
         print(f"\nConstruction curriculum: scaffold -> build from scratch -> opponent phases")
     print(f"\nProgressive opponent phases (max {max_phase}):")
     for phase in range(max_phase + 1):
-        pool_indices = DEFAULT_PHASE_MAP.get(phase, list(range(len(opponent_pools))))
+        pool_indices = phase_map.get(phase, list(range(len(opponent_pools))))
         active = [opponent_pools[i] for i in pool_indices if i < len(opponent_pools)]
         names = [Path(p).stem for p in active]
         print(f"  Phase {phase}: {', '.join(names)}")
@@ -451,6 +541,7 @@ def train(
         max_construction_steps=max_construction_steps,
         board_library_path=board_library_path,
         scaffolding_moves_to_remove=initial_scaffolding,
+        phase_map=phase_map,
     )
 
     # Create training environments
@@ -482,6 +573,7 @@ def train(
         board_library_path=board_library_path,
         eval_callback_env=eval_env,
         output_dir=output_dir,
+        phase_map=phase_map,
         verbose=1,
     )
 
@@ -554,10 +646,6 @@ def train(
 
     env.close()
     eval_env.close()
-
-
-# Import DEFAULT_PHASE_MAP for display
-from spaces_game.simultaneous_play_env import DEFAULT_PHASE_MAP
 
 
 if __name__ == "__main__":
