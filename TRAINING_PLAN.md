@@ -19,7 +19,7 @@ Stage 1: Perfect Counter-Play (Board Construction)      ✅ COMPLETE
    ↓
 Stage 2: Reverse Curriculum Construction                 ⚠️  OBSOLETE (replaced by Stage 3 scaffolding)
    ↓
-Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 DONE
+Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 DONE, SIZE 4 IN PROGRESS
    ↓
 Stage 4: 5-Round Play with Fog of War                   ⏳ NEXT UP
    ↓
@@ -308,11 +308,19 @@ With the trap limit rule (`max_traps = board_size - 1`), Stage 2 can no longer a
 - ✅ Multi-round play script: `examples/play_against_agent.py --rounds 5`
 - ✅ Trap limit enforcement in `_is_valid_placement()` + action masks
 - ✅ Construction scaffolding (replaces Stage 2) via `--board-library`
+- ✅ CLI hyperparameter tuning: `--learning-rate`, `--ent-coef`, `--n-steps`, `--batch-size`
+- ✅ Dynamic pool discovery from `boards/sizeN/` with numeric prefix ordering
+- ✅ Dynamic phase map generation (`build_phase_map`) based on number of pools
 - ✅ Curated opponent board pools in `boards/size2/` and `boards/size3/`:
   - `simple.json` - straight paths, no traps
   - `one_trap.json` - straight path + 1 trap
   - `super_move.json` - supermove (trap on own cell)
   - `super_move_counter.json` - 2 traps with crossover patterns
+- ✅ Size 4 opponent pools in `boards/size4/` (4 boards each):
+  - `00_simple.json` - straight paths, no traps
+  - `01_mixed_traps.json` - 1-3 traps, various placements
+  - `02_super_move.json` - supermove (trap on own cell)
+  - `03_super_move_counter.json` - redirect traps forcing column changes
 
 ### Construction Scaffolding (replaces Stage 2):
 
@@ -364,9 +372,27 @@ python examples/train_simultaneous.py --size 2 --timesteps 200000
 # Size 3 (with construction scaffolding, 2M for full curriculum)
 python examples/train_simultaneous.py --size 3 --board-library new_boards_3.json --timesteps 2000000
 
+# Size 4 (larger action space needs tuned hyperparameters)
+python examples/train_simultaneous.py --size 4 --board-library new_boards_4.json \
+    --timesteps 10000000 --min-phase-steps 100000 \
+    --learning-rate 1e-4 --ent-coef 0.1 --n-steps 4096
+
 # Monitor
 tensorboard --logdir logs/size3_stage3/
 ```
+
+### Hyperparameter Tuning:
+
+Default hyperparameters work for size 2-3. Larger boards need adjustment:
+
+```bash
+--learning-rate  # Default: 3e-4. Try 1e-4 for size 4+ (reduces oscillation)
+--ent-coef       # Default: 0.05. Try 0.1 for size 4+ (more exploration)
+--n-steps        # Default: 2048. Try 4096-8192 for size 4+ (longer rollouts)
+--batch-size     # Default: 64. Try 128 for larger boards
+```
+
+Size 2-3 training is unaffected — defaults match what worked previously.
 
 ### Size 3 Results (2M timesteps = 500k n_calls with 4 envs):
 
@@ -633,17 +659,18 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 ### What's Next:
 
 **Immediate**:
-- Retrain size 2 + size 3 from scratch with all three fixes (5M steps each)
-- Play-test beginner/intermediate/expert to verify skill separation
+- ✅ Size 2 + 3 retrained with all fixes (Feb 12) — all phases cleared
+- Train size 4 with tuned hyperparameters (lower learning rate, higher entropy)
 - Deploy retrained models to inference server and verify via Node frontend
 
 **Short-term**:
-- Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
-- Train Stage 4 on size 2 first, then size 3
+- Implement stochastic fallback on retry for deterministic skill levels
+- Implement fog of war in `SimultaneousPlayEnv` (Stage 4) for size 2/3
+- Investigate self-play phase for board creativity / generalization
 
 **Long-term**:
 - Self-play training (Stage 5)
-- Scale to size 4+
+- Scale to size 5+
 - Human vs agent exhibition matches
 
 ---
@@ -679,4 +706,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Retraining size 2 + size 3 from scratch (Feb 11, 2026).** Three fixes require fresh training: first-visit scoring, no-revisit masking, full-path board validation. 5M steps each with board libraries. Inference server and Node frontend ready with retry/forfeit handling. Next after retraining: Stage 4 (fog of war). Key open question: how to represent the "trap exists but location unknown" signal in the observation space.
+Current Status: **Size 2 + 3 retrained and complete (Feb 12, 2026). Size 4 in progress.** First size 4 attempt (8M steps, default hyperparameters) stalled at opponent phase 0 — training destabilized with 25-35% win rate after 5.5M steps. Root cause: default hyperparameters (lr=3e-4, ent=0.05, n_steps=2048) don't scale to 4x4 action space. Solution: CLI hyperparameter flags added, opponent pools trimmed from 5 to 4 (merged one_trap + multi_trap → mixed_traps). Next attempt: lr=1e-4, ent=0.1, n_steps=4096.

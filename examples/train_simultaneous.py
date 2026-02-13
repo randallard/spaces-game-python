@@ -471,6 +471,10 @@ def train(
     resume_from: Optional[str] = None,
     output_dir: Optional[str] = None,
     min_phase_steps: int = 10_000,
+    learning_rate: float = 3e-4,
+    ent_coef: float = 0.05,
+    n_steps: int = 2048,
+    batch_size: int = 64,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -502,6 +506,10 @@ def train(
     print(f"Save frequency:    {save_freq:,} steps")
     print(f"Max steps/round:   {max_construction_steps}")
     print(f"Min phase steps:   {min_phase_steps:,}")
+    print(f"Learning rate:     {learning_rate}")
+    print(f"Entropy coeff:     {ent_coef}")
+    print(f"N steps (total):   {n_steps} ({n_steps // n_envs} per env)")
+    print(f"Batch size:        {batch_size}")
     print(f"Output directory:  {output_dir}")
     if board_library_path:
         print(f"Board library:     {board_library_path} (construction scaffolding)")
@@ -599,8 +607,8 @@ def train(
     if resume_from and Path(resume_from).exists():
         print(f"\nResuming from: {resume_from}")
         model = MaskablePPO.load(resume_from, env=env)
-        model.learning_rate = 3e-4
-        model.ent_coef = 0.1
+        model.learning_rate = learning_rate
+        model.ent_coef = ent_coef
     else:
         print("\nInitializing MaskablePPO agent...")
         model = MaskablePPO(
@@ -608,14 +616,14 @@ def train(
             env,
             verbose=1,
             tensorboard_log=log_dir,
-            learning_rate=3e-4,
-            n_steps=2048 // n_envs,  # 512 per env
-            batch_size=64,
+            learning_rate=learning_rate,
+            n_steps=n_steps // n_envs,
+            batch_size=batch_size,
             n_epochs=10,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.2,
-            ent_coef=0.05,
+            ent_coef=ent_coef,
         )
 
     # Train
@@ -694,6 +702,22 @@ if __name__ == "__main__":
         "--min-phase-steps", type=int, default=10_000,
         help="Minimum steps per curriculum phase before advancing (default: 10,000)",
     )
+    parser.add_argument(
+        "--learning-rate", type=float, default=3e-4,
+        help="Learning rate (default: 3e-4, try 1e-4 for larger boards)",
+    )
+    parser.add_argument(
+        "--ent-coef", type=float, default=0.05,
+        help="Entropy coefficient for exploration (default: 0.05, try 0.1 for larger boards)",
+    )
+    parser.add_argument(
+        "--n-steps", type=int, default=2048,
+        help="Total rollout steps across all envs (default: 2048, try 4096-8192 for larger boards)",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=64,
+        help="Minibatch size (default: 64)",
+    )
 
     args = parser.parse_args()
 
@@ -712,4 +736,8 @@ if __name__ == "__main__":
         resume_from=args.resume,
         output_dir=args.output_dir,
         min_phase_steps=args.min_phase_steps,
+        learning_rate=args.learning_rate,
+        ent_coef=args.ent_coef,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
     )
