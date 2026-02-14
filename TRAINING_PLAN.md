@@ -19,11 +19,11 @@ Stage 1: Perfect Counter-Play (Board Construction)      ✅ COMPLETE
    ↓
 Stage 2: Reverse Curriculum Construction                 ⚠️  OBSOLETE (replaced by Stage 3 scaffolding)
    ↓
-Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 DONE, SIZE 4 IN PROGRESS
+Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 DONE, SIZE 4 IN PROGRESS (self-play)
    ↓
 Stage 4: 5-Round Play with Fog of War                   ⏳ NEXT UP
    ↓
-Stage 5: Self-Play (Meta-Game)                           ⏳ TODO
+Stage 5: Self-Play (Meta-Game)                           ✅ MERGED INTO STAGE 3 (--self-play flag)
    ↓
 FINAL BOSS: 5-Round Fog of War vs Humans
 ```
@@ -70,13 +70,27 @@ MaskablePPO's policy will happily revisit cells — masking is enforcement,
 not learned behavior. See `play_against_agent.py::_agent_build_board_blind()`
 for the reference implementation.
 
+### Strict Action Masking (Feb 14, 2026)
+
+BFS reachability checks in `_is_valid_placement()` make invalid boards structurally
+impossible. Every action the agent can take keeps the board on a completable path.
+This replaces construction scaffolding entirely — the agent doesn't need to be taught
+what a valid board looks like because it literally can't build an invalid one.
+
+The BFS checks two conditions for every candidate move:
+1. All rows 0..board_size-1 remain visitable (via already-visited + reachable cells)
+2. Row 0 is reachable from the current/hypothetical position (for the finish condition)
+
+Cost is trivial: max 16 cells for size 4.
+
 ### Training Progression Per Board Size
 
 For each board size (2, 3, ...):
 1. Implement trap limit (`board_size - 1` max traps)
-2. Train Stage 3 with construction scaffolding (`--board-library`) + opponent curriculum
-3. Train Stage 4 with fog of war
-4. Scale to next board size
+2. Train Stage 3 with opponent curriculum (strict masking handles construction)
+3. Optionally add `--self-play` for sizes where random opponents cap out
+4. Train Stage 4 with fog of war
+5. Scale to next board size
 
 Each stage builds on the previous one's learned skills.
 
@@ -307,7 +321,8 @@ With the trap limit rule (`max_traps = board_size - 1`), Stage 2 can no longer a
 - ✅ Training script: `examples/train_simultaneous.py`
 - ✅ Multi-round play script: `examples/play_against_agent.py --rounds 5`
 - ✅ Trap limit enforcement in `_is_valid_placement()` + action masks
-- ✅ Construction scaffolding (replaces Stage 2) via `--board-library`
+- ✅ Strict action masking: BFS reachability prevents invalid boards at mask level
+- ✅ Self-play: `--self-play` with rolling opponent pool and skill snapshots
 - ✅ CLI hyperparameter tuning: `--learning-rate`, `--ent-coef`, `--n-steps`, `--batch-size`
 - ✅ Dynamic pool discovery from `boards/sizeN/` with numeric prefix ordering
 - ✅ Dynamic phase map generation (`build_phase_map`) based on number of pools
@@ -322,16 +337,12 @@ With the trap limit rule (`max_traps = board_size - 1`), Stage 2 can no longer a
   - `02_super_move.json` - supermove (trap on own cell)
   - `03_super_move_counter.json` - redirect traps forcing column changes
 
-### Construction Scaffolding (replaces Stage 2):
+### Construction Scaffolding (REMOVED — Feb 14, 2026):
 
-When `--board-library` is provided, a construction curriculum runs before the opponent curriculum. Boards are pre-filled from the library, with scaffolding gradually removed:
-
-- Phase C0: Pre-fill all but goal -> agent just signals "done"
-- Phase C1: Pre-fill all but last piece + goal
-- Phase CN: No pre-fill -> agent builds from scratch
-- Advances on valid_rate >= 95% (min 10k steps/phase)
-
-Once the agent builds valid boards from scratch, opponent phases begin.
+Construction scaffolding (`--board-library`) has been replaced by strict action masking.
+BFS reachability checks make invalid boards structurally impossible, so the agent doesn't
+need scaffolding to learn what a valid board looks like. The `--board-library` flag is
+accepted for backward compatibility but prints a deprecation warning and does nothing.
 
 ### Progressive Opponent Curriculum:
 - Phase 0: Simple boards only
@@ -366,19 +377,22 @@ Once the agent builds valid boards from scratch, opponent phases begin.
 
 ### Training Commands:
 ```bash
-# Size 2 (no scaffolding needed - learns construction from scratch)
+# Size 2
 python examples/train_simultaneous.py --size 2 --timesteps 200000
 
-# Size 3 (with construction scaffolding, 2M for full curriculum)
-python examples/train_simultaneous.py --size 3 --board-library new_boards_3.json --timesteps 2000000
+# Size 3
+python examples/train_simultaneous.py --size 3 --timesteps 2000000
 
-# Size 4 (larger action space needs tuned hyperparameters)
-python examples/train_simultaneous.py --size 4 --board-library new_boards_4.json \
+# Size 4 with self-play (recommended for sizes where random opponents cap out)
+python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
+
+# Size 4 with tuned hyperparameters (if self-play alone isn't enough)
+python examples/train_simultaneous.py --size 4 --self-play \
     --timesteps 10000000 --min-phase-steps 100000 \
     --learning-rate 1e-4 --ent-coef 0.1 --n-steps 4096
 
 # Monitor
-tensorboard --logdir logs/size3_stage3/
+tensorboard --logdir logs/size4_stage3/
 ```
 
 ### Hyperparameter Tuning:
@@ -492,52 +506,36 @@ python examples/train_simultaneous.py --size 3 --fog \
 
 ---
 
-## Stage 5 (future): Self-Play (Meta-Game)
+## Stage 5: Self-Play (MERGED INTO STAGE 3 — Feb 14, 2026)
 
-**Purpose**: Discover emergent strategies through adversarial co-evolution.
+Self-play is now built into Stage 3 via the `--self-play` flag. No separate training
+script or environment needed.
 
-### What Agent Learns:
-- Counter-counter-strategies (if opponent learns to avoid traps, agent learns deception)
-- Deception (early boards mislead opponent about later strategy)
-- Adaptation (adjust strategy based on opponent's adaptation)
-- Meta-meta-game (infinite strategic depth)
+### How It Works:
+1. **Warmup** (default 100k steps): JSON pool opponents, agent learns basic construction
+2. **Snapshot** (every 50k steps): Freeze current model, add to rolling pool of 10 snapshots
+3. **Opponent assignment**: Each training env gets a random snapshot as its opponent
+4. **Fallback**: If opponent model produces an invalid board, falls back to JSON pool (~20% mixing prevents collapse)
 
-### Self-Play Variants:
-
-#### Option A: Classic Self-Play
-```python
-# Agent plays against copy of itself
-opponent_policy = copy.deepcopy(agent_policy)  # Update every 10K steps
-```
-
-**Pros**: Discovers counter-strategies
-**Cons**: Can collapse to local optima
-
-#### Option B: League Training (Recommended)
-```python
-# Agent plays against:
-# - Latest self
-# - Historical snapshots
-# - Specialist exploiter agents
-```
-
-**Pros**: More robust, diverse strategies
-**Cons**: Requires more compute
-
-### Training Command (Future):
+### Training Command:
 ```bash
-python examples/train_selfplay.py \
-    --board-pool data/boards_size_3.json \
-    --mode league \
-    --timesteps 50000000 \
-    --n-envs 8 \
-    --opponent-update-freq 20000
+python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
+
+# With custom self-play parameters:
+python examples/train_simultaneous.py --size 4 --self-play \
+    --snapshot-freq 50000 --pool-size 10 --warmup-steps 100000 \
+    --timesteps 10000000
 ```
 
-### Success Criteria:
-- Wins >60% vs frozen snapshot from 1M steps ago (shows improvement)
-- Demonstrates strategic diversity (uses different board styles across games)
-- Discovers novel strategies not seen in fixed-opponent training
+### Skill Level Snapshots:
+Milestone checkpoints are saved when eval win rate crosses thresholds:
+- 55% -> beginner, 60% -> intermediate, 65% -> advanced, 70% -> expert, 75% -> advanced_plus
+- Training end: snapshot timeline divided into 6 tiers for inference server
+
+### Why Self-Play Matters:
+Random pool opponents cap strategic learning at ~50% win rate (rock-paper-scissors dynamics).
+Self-play opponents have actual patterns — the `opponent_history` observation becomes useful
+because the agent can learn to exploit its own tendencies and adapt across rounds.
 
 ---
 
@@ -599,31 +597,22 @@ python examples/play_vs_agent.py \
 
 ## ⚡ Quick Start: Current Status
 
-### Retrain Both Sizes (fresh, with all fixes):
-
-Previous models were trained before three critical fixes:
-- First-visit forward movement scoring (prevents oscillation farming) — Feb 9
-- No-revisit action masking (prevents wasteful revisits) — Feb 9
-- Full-path board validation: piece must visit every row + reach goal (prevents trivial 1-step boards) — Feb 11
-
-Models must be retrained from scratch (no `--resume`) since the validation rules changed. The old models learned they could build incomplete boards and get `valid_board: True`.
+### Training Commands:
 
 ```bash
-# Size 2 - fresh start with board library
-python examples/train_simultaneous.py \
-    --size 2 --board-library new_boards_2.json \
-    --timesteps 5000000 --min-phase-steps 100000
+# Size 2 (strict masking, no scaffolding needed)
+python examples/train_simultaneous.py --size 2 --timesteps 200000
 
-# Size 3 - fresh start with board library
-python examples/train_simultaneous.py \
-    --size 3 --board-library new_boards_3.json \
-    --timesteps 5000000 --min-phase-steps 100000
+# Size 3
+python examples/train_simultaneous.py --size 3 --timesteps 2000000
+
+# Size 4 with self-play
+python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
 
 # Monitor
-tensorboard --logdir logs/size2_stage3/
-tensorboard --logdir logs/size3_stage3/
+tensorboard --logdir logs/size4_stage3/
 
-# Produces: models/size{N}/stage3/difficulty/{beginner,intermediate,expert}.zip
+# Produces: models/size{N}/stage3/difficulty/{beginner,intermediate,...,expert}.zip
 ```
 
 ### Play Against the Agent:
@@ -660,16 +649,15 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 
 **Immediate**:
 - ✅ Size 2 + 3 retrained with all fixes (Feb 12) — all phases cleared
-- Train size 4 with tuned hyperparameters (lower learning rate, higher entropy)
-- Deploy retrained models to inference server and verify via Node frontend
+- ✅ Strict masking + self-play rework (Feb 14) — scaffolding removed, rewards simplified
+- Size 4 self-play training in progress (5M steps)
 
 **Short-term**:
-- Implement stochastic fallback on retry for deterministic skill levels
-- Implement fog of war in `SimultaneousPlayEnv` (Stage 4) for size 2/3
-- Investigate self-play phase for board creativity / generalization
+- Evaluate size 4 self-play results — does win rate break past 50%?
+- Deploy size 4 model to inference server
+- Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
 
 **Long-term**:
-- Self-play training (Stage 5)
 - Scale to size 5+
 - Human vs agent exhibition matches
 
@@ -681,7 +669,7 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 ```bash
 tensorboard --logdir logs/
 # Monitor: ep_rew_mean, eval/mean_reward, train/loss
-# Stage 3 specific: curriculum/construction_phase, curriculum/opponent_phase, curriculum/valid_rate
+# Stage 3 specific: curriculum/opponent_phase, curriculum/valid_rate, curriculum/game_win_rate
 ```
 
 ### Key Metrics by Stage:
@@ -706,4 +694,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Size 2 + 3 retrained and complete (Feb 12, 2026). Size 4 in progress.** First size 4 attempt (8M steps, default hyperparameters) stalled at opponent phase 0 — training destabilized with 25-35% win rate after 5.5M steps. Root cause: default hyperparameters (lr=3e-4, ent=0.05, n_steps=2048) don't scale to 4x4 action space. Solution: CLI hyperparameter flags added, opponent pools trimmed from 5 to 4 (merged one_trap + multi_trap → mixed_traps). Next attempt: lr=1e-4, ent=0.1, n_steps=4096.
+Current Status: **Size 2 + 3 complete (Feb 12). Size 4 self-play training in progress (Feb 14).** Stage 3 reworked: strict action masking (BFS reachability) makes invalid boards impossible, construction scaffolding removed, rewards simplified, self-play with rolling opponent pool added. Size 4 running with `--self-play --timesteps 5000000`.

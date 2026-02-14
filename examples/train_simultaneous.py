@@ -141,14 +141,7 @@ def mask_fn(env: gym.Env) -> np.ndarray:
 
 class OpponentProgressionCallback(BaseCallback):
     """
-    Callback to advance training through two sequential curricula:
-
-    1. Construction curriculum (if board_library_path provided):
-       Pre-fills boards from library, gradually removing scaffolding.
-       Advances on valid_rate >= threshold.
-
-    2. Opponent curriculum (always):
-       Advances opponent difficulty based on game win rate.
+    Callback to advance opponent difficulty based on game win rate.
     """
 
     def __init__(
@@ -157,15 +150,14 @@ class OpponentProgressionCallback(BaseCallback):
         eval_episodes: int = 20,
         win_rate_threshold: float = 0.70,
         valid_rate_threshold: float = 0.90,
-        construction_valid_threshold: float = 0.95,
         min_steps_per_phase: int = 10000,
         max_phase: int = 4,
         board_size: int = 2,
         opponent_pools: Optional[List[str]] = None,
-        board_library_path: Optional[str] = None,
         eval_callback_env: Optional[DummyVecEnv] = None,
         output_dir: str = "models/stage3",
         phase_map: Optional[Dict[int, List[int]]] = None,
+        start_opponent_phase: Optional[int] = None,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -173,42 +165,23 @@ class OpponentProgressionCallback(BaseCallback):
         self.eval_episodes = eval_episodes
         self.win_rate_threshold = win_rate_threshold
         self.valid_rate_threshold = valid_rate_threshold
-        self.construction_valid_threshold = construction_valid_threshold
         self.min_steps_per_phase = min_steps_per_phase
         self.max_phase = max_phase
-        self.current_phase = 0
+        self.current_phase = start_opponent_phase if start_opponent_phase is not None else 0
         self.phase_history = []
         self.eval_callback_env = eval_callback_env
         self.output_dir = output_dir
         self._phase_start_step = 0
 
-        # Construction curriculum state
-        self.board_library_path = board_library_path
-        self.construction_phase = 0  # current scaffolding phase
-        self.max_construction_phase = 0  # computed from library
-        self.in_construction_mode = False
-
-        if board_library_path is not None:
-            from spaces_game.board_loader import load_boards_from_json
-            library = load_boards_from_json(board_library_path)
-            if library:
-                max_seq = max(len(b.sequence) for b in library)
-                self.max_construction_phase = max_seq - 1  # -1: last phase = from scratch
-                self.in_construction_mode = True
-
-        # Dedicated single env for evaluation (must match training env's obs space)
+        # Dedicated single env for evaluation
         max_construction_steps = board_size * 10
         self._eval_env = SimultaneousPlayEnv(
             board_size=board_size,
             opponent_pools=opponent_pools,
-            opponent_phase=0,
-            board_library_path=board_library_path,
+            opponent_phase=self.current_phase,
             max_construction_steps=max_construction_steps,
             phase_map=phase_map,
         )
-        # Start eval env with scaffolding if in construction mode
-        if self.in_construction_mode:
-            self._eval_env.set_scaffolding(0)  # Phase 0: place goal only
 
     def _on_step(self) -> bool:
         if self.n_calls % self.eval_freq == 0:
@@ -216,12 +189,9 @@ class OpponentProgressionCallback(BaseCallback):
         return True
 
     def _evaluate_and_maybe_advance(self):
-        mode = "CONSTRUCTION" if self.in_construction_mode else "OPPONENT"
-        phase = self.construction_phase if self.in_construction_mode else self.current_phase
-
         if self.verbose >= 1:
             print(f"\n{'='*70}")
-            print(f"{mode} PHASE {phase} EVALUATION ({self.eval_episodes} games)")
+            print(f"OPPONENT PHASE {self.current_phase} EVALUATION ({self.eval_episodes} games)")
             print(f"{'='*70}")
 
         game_wins = 0
@@ -263,12 +233,10 @@ class OpponentProgressionCallback(BaseCallback):
         avg_reward = total_reward / self.eval_episodes
 
         # Log
-        self.logger.record("curriculum/construction_phase", self.construction_phase)
         self.logger.record("curriculum/opponent_phase", self.current_phase)
         self.logger.record("curriculum/game_win_rate", game_win_rate)
         self.logger.record("curriculum/valid_rate", valid_rate)
         self.logger.record("curriculum/avg_reward", avg_reward)
-        self.logger.record("curriculum/in_construction", int(self.in_construction_mode))
 
         if self.verbose >= 1:
             ties = self.eval_episodes - game_wins - game_losses
@@ -276,19 +244,13 @@ class OpponentProgressionCallback(BaseCallback):
             print(f"  Valid rate: {valid_rate:.1%} ({total_rounds_valid}/{total_rounds} rounds)")
             print(f"  Avg reward: {avg_reward:.2f}")
 
-        # Advance phase (different logic for construction vs opponent mode)
+        # Advance opponent phase if thresholds met
         steps_at_phase = self.n_calls - self._phase_start_step
-
-        if self.in_construction_mode:
-            self._maybe_advance_construction(valid_rate, steps_at_phase)
-        else:
-            self._maybe_advance_opponent(game_win_rate, valid_rate, steps_at_phase)
+        self._maybe_advance_opponent(game_win_rate, valid_rate, steps_at_phase)
 
         self.phase_history.append({
             "timestep": self.n_calls,
-            "construction_phase": self.construction_phase,
             "opponent_phase": self.current_phase,
-            "in_construction": self.in_construction_mode,
             "game_win_rate": game_win_rate,
             "valid_rate": valid_rate,
             "avg_reward": avg_reward,
@@ -296,74 +258,6 @@ class OpponentProgressionCallback(BaseCallback):
 
         if self.verbose >= 1:
             print(f"{'='*70}\n")
-
-    def _maybe_advance_construction(self, valid_rate: float, steps_at_phase: int):
-        """Advance construction scaffolding phase based on valid_rate."""
-        if (valid_rate >= self.construction_valid_threshold and
-                steps_at_phase >= self.min_steps_per_phase and
-                self.construction_phase < self.max_construction_phase):
-            self.construction_phase += 1
-            self._phase_start_step = self.n_calls
-            new_scaffolding = self.construction_phase
-
-            # Update training envs
-            try:
-                self.training_env.env_method("set_scaffolding", new_scaffolding)
-            except Exception as e:
-                if self.verbose >= 1:
-                    print(f"  Warning: Could not update training envs: {e}")
-
-            # Update eval envs
-            self._eval_env.set_scaffolding(new_scaffolding)
-            if self.eval_callback_env is not None:
-                try:
-                    self.eval_callback_env.env_method(
-                        "set_scaffolding", new_scaffolding,
-                    )
-                except Exception as e:
-                    if self.verbose >= 1:
-                        print(f"  Warning: Could not update eval env: {e}")
-
-            # Save checkpoint
-            ckpt_path = f"{self.output_dir}/construction_phase_{self.construction_phase}_checkpoint.zip"
-            self.model.save(ckpt_path)
-
-            if self.verbose >= 1:
-                print(f"\n  CONSTRUCTION PHASE ADVANCED: {self.construction_phase-1} -> {self.construction_phase}")
-                print(f"  Scaffolding: remove {new_scaffolding} moves (+goal)")
-                print(f"  Checkpoint saved: {ckpt_path}")
-
-        # Check if construction curriculum is complete
-        elif (valid_rate >= self.construction_valid_threshold and
-                steps_at_phase >= self.min_steps_per_phase and
-                self.construction_phase >= self.max_construction_phase):
-            # Transition to opponent curriculum
-            self.in_construction_mode = False
-            self._phase_start_step = self.n_calls
-
-            # Disable scaffolding
-            try:
-                self.training_env.env_method("set_scaffolding", -1)
-            except Exception as e:
-                if self.verbose >= 1:
-                    print(f"  Warning: Could not update training envs: {e}")
-
-            self._eval_env.set_scaffolding(-1)
-            if self.eval_callback_env is not None:
-                try:
-                    self.eval_callback_env.env_method("set_scaffolding", -1)
-                except Exception as e:
-                    if self.verbose >= 1:
-                        print(f"  Warning: Could not update eval env: {e}")
-
-            # Save checkpoint
-            ckpt_path = f"{self.output_dir}/construction_complete_checkpoint.zip"
-            self.model.save(ckpt_path)
-
-            if self.verbose >= 1:
-                print(f"\n  CONSTRUCTION CURRICULUM COMPLETE!")
-                print(f"  Transitioning to opponent curriculum (phase 0)")
-                print(f"  Checkpoint saved: {ckpt_path}")
 
     def _maybe_advance_opponent(self, game_win_rate: float, valid_rate: float, steps_at_phase: int):
         """Advance opponent phase based on game win rate (existing logic)."""
@@ -430,6 +324,170 @@ class OpponentProgressionCallback(BaseCallback):
             print(f"Phase history saved to: {history_path}")
 
 
+class SelfPlayCallback(BaseCallback):
+    """Callback for self-play: periodically snapshot the model and assign
+    frozen copies as opponents to training environments.
+
+    After warmup_steps, every snapshot_freq steps:
+    1. Save current model as a snapshot
+    2. Prune oldest if pool exceeds pool_size
+    3. Assign a random snapshot to each training env
+
+    ~20% of episodes still use JSON pool fallback (when opponent model
+    produces an invalid board) to prevent self-play collapse.
+
+    Also saves skill-level milestone checkpoints based on eval win rate.
+    """
+
+    # Skill tier thresholds (win rate -> tier name)
+    SKILL_TIERS = [
+        (0.55, "beginner"),
+        (0.60, "intermediate"),
+        (0.65, "advanced"),
+        (0.70, "expert"),
+        (0.75, "advanced_plus"),
+    ]
+
+    def __init__(
+        self,
+        output_dir: str,
+        snapshot_freq: int = 50_000,
+        pool_size: int = 10,
+        warmup_steps: int = 100_000,
+        n_envs: int = 4,
+        phase_callback: Optional['OpponentProgressionCallback'] = None,
+        verbose: int = 1,
+    ):
+        super().__init__(verbose)
+        self.output_dir = output_dir
+        self.snapshot_freq = snapshot_freq
+        self.pool_size = pool_size
+        self.warmup_steps = warmup_steps
+        self.n_envs = n_envs
+        self.phase_callback = phase_callback
+        self.snapshot_paths: List[str] = []
+        self._warmup_complete = False
+        self._last_snapshot_step = 0
+        self._saved_tiers: set = set()
+        self._best_win_rate = 0.0
+
+        # Create snapshot directory
+        self.snapshot_dir = os.path.join(output_dir, "opponent_pool")
+        os.makedirs(self.snapshot_dir, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        total_steps = self.n_calls * self.n_envs
+
+        if total_steps < self.warmup_steps:
+            return True
+
+        if not self._warmup_complete:
+            self._warmup_complete = True
+            if self.verbose >= 1:
+                print(f"\n  SELF-PLAY: Warmup complete at {total_steps:,} steps")
+            self._take_snapshot()
+            return True
+
+        if self.n_calls - self._last_snapshot_step >= self.snapshot_freq:
+            self._take_snapshot()
+
+        # Check for skill milestone checkpoints from phase callback's eval
+        self._check_skill_milestones()
+
+        return True
+
+    def _take_snapshot(self):
+        """Save model snapshot and assign to training envs."""
+        self._last_snapshot_step = self.n_calls
+
+        # Save snapshot
+        snapshot_path = os.path.join(
+            self.snapshot_dir, f"snapshot_{self.n_calls}.zip",
+        )
+        self.model.save(snapshot_path)
+        self.snapshot_paths.append(snapshot_path)
+
+        # Prune oldest
+        while len(self.snapshot_paths) > self.pool_size:
+            old_path = self.snapshot_paths.pop(0)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        if self.verbose >= 1:
+            print(f"  SELF-PLAY: Snapshot saved ({len(self.snapshot_paths)} in pool)")
+
+        # Assign random snapshots to training envs
+        self._assign_opponents()
+
+    def _assign_opponents(self):
+        """Assign a random snapshot to each training env."""
+        if not self.snapshot_paths:
+            return
+
+        for i in range(self.n_envs):
+            path = self.snapshot_paths[np.random.randint(len(self.snapshot_paths))]
+            try:
+                self.training_env.env_method(
+                    "set_opponent_model", path, indices=[i],
+                )
+            except Exception as e:
+                if self.verbose >= 1:
+                    print(f"  Warning: Could not set opponent model for env {i}: {e}")
+
+    def _check_skill_milestones(self):
+        """Check phase callback's eval win rate and save skill checkpoints."""
+        if self.phase_callback is None or not self.phase_callback.phase_history:
+            return
+
+        latest = self.phase_callback.phase_history[-1]
+        win_rate = latest.get("game_win_rate", 0.0)
+
+        if win_rate <= self._best_win_rate:
+            return
+        self._best_win_rate = win_rate
+
+        diff_dir = os.path.join(self.output_dir, "difficulty")
+        os.makedirs(diff_dir, exist_ok=True)
+
+        for threshold, tier_name in self.SKILL_TIERS:
+            if tier_name in self._saved_tiers:
+                continue
+            if win_rate >= threshold:
+                path = os.path.join(diff_dir, f"{tier_name}.zip")
+                self.model.save(path)
+                self._saved_tiers.add(tier_name)
+                if self.verbose >= 1:
+                    print(f"  SKILL CHECKPOINT: {tier_name} (win_rate={win_rate:.1%}) -> {path}")
+
+    def _on_training_end(self) -> None:
+        # Save final tier checkpoints from snapshot timeline
+        diff_dir = os.path.join(self.output_dir, "difficulty")
+        os.makedirs(diff_dir, exist_ok=True)
+
+        # Map snapshot timeline to 6 tiers
+        tier_names = ["beginner", "intermediate", "advanced", "expert", "advanced_plus", "master"]
+        if self.snapshot_paths:
+            n_snapshots = len(self.snapshot_paths)
+            for i, tier in enumerate(tier_names):
+                if tier in self._saved_tiers:
+                    continue  # Already saved by milestone
+                idx = min(i * n_snapshots // len(tier_names), n_snapshots - 1)
+                src = self.snapshot_paths[idx]
+                dst = os.path.join(diff_dir, f"{tier}_checkpoint.zip")
+                import shutil
+                shutil.copy2(src, dst)
+                if self.verbose >= 1:
+                    print(f"  Skill tier '{tier}' -> {dst}")
+
+        # Always save current model as expert
+        expert_path = os.path.join(diff_dir, "expert.zip")
+        self.model.save(expert_path)
+
+        if self.verbose >= 1:
+            print(f"\nSelf-play: {len(self.snapshot_paths)} snapshots in pool")
+            print(f"Skill milestones saved: {sorted(self._saved_tiers)}")
+
+
 def make_env(
     rank: int,
     seed: int = 0,
@@ -437,8 +495,6 @@ def make_env(
     opponent_pools: Optional[List[str]] = None,
     opponent_phase: int = 0,
     max_construction_steps: int = 20,
-    board_library_path: Optional[str] = None,
-    scaffolding_moves_to_remove: int = -1,
     phase_map: Optional[Dict[int, List[int]]] = None,
 ):
     """Create a single environment instance with action masking."""
@@ -448,11 +504,8 @@ def make_env(
             opponent_pools=opponent_pools,
             opponent_phase=opponent_phase,
             max_construction_steps=max_construction_steps,
-            board_library_path=board_library_path,
             phase_map=phase_map,
         )
-        if scaffolding_moves_to_remove >= 0:
-            env.set_scaffolding(scaffolding_moves_to_remove)
         env.reset(seed=seed + rank)
         env = ActionMasker(env, mask_fn)
         env = Monitor(env)
@@ -475,6 +528,11 @@ def train(
     ent_coef: float = 0.05,
     n_steps: int = 2048,
     batch_size: int = 64,
+    start_opponent_phase: Optional[int] = None,
+    self_play: bool = False,
+    snapshot_freq: int = 50_000,
+    pool_size: int = 10,
+    warmup_steps: int = 100_000,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -491,10 +549,8 @@ def train(
     phase_map = build_phase_map(len(opponent_pools))
     max_phase = max(phase_map.keys())
 
-    # Determine initial scaffolding
-    initial_scaffolding = -1  # disabled by default
-    if board_library_path is not None and Path(board_library_path).exists():
-        initial_scaffolding = 0  # start at phase 0 (place goal only)
+    if board_library_path is not None:
+        print(f"WARNING: --board-library is deprecated (strict masking makes scaffolding unnecessary)")
 
     print("=" * 70)
     print("SIMULTANEOUS 5-ROUND PLAY (Stage 3) - MaskablePPO")
@@ -511,19 +567,20 @@ def train(
     print(f"N steps (total):   {n_steps} ({n_steps // n_envs} per env)")
     print(f"Batch size:        {batch_size}")
     print(f"Output directory:  {output_dir}")
-    if board_library_path:
-        print(f"Board library:     {board_library_path} (construction scaffolding)")
     print(f"\nOpponent pools ({len(opponent_pools)}):")
     for i, p in enumerate(opponent_pools):
         print(f"  [{i}] {p}")
-    if board_library_path:
-        print(f"\nConstruction curriculum: scaffold -> build from scratch -> opponent phases")
     print(f"\nProgressive opponent phases (max {max_phase}):")
     for phase in range(max_phase + 1):
         pool_indices = phase_map.get(phase, list(range(len(opponent_pools))))
         active = [opponent_pools[i] for i in pool_indices if i < len(opponent_pools)]
         names = [Path(p).stem for p in active]
         print(f"  Phase {phase}: {', '.join(names)}")
+    if self_play:
+        print(f"\nSelf-play enabled:")
+        print(f"  Snapshot freq:   {snapshot_freq:,} steps")
+        print(f"  Pool size:       {pool_size}")
+        print(f"  Warmup steps:    {warmup_steps:,}")
     if resume_from:
         print(f"\nResuming from:     {resume_from}")
     print("=" * 70)
@@ -542,13 +599,12 @@ def train(
     os.makedirs(eval_dir, exist_ok=True)
 
     # Common env kwargs
+    initial_opponent_phase = start_opponent_phase if start_opponent_phase is not None else 0
     env_kwargs = dict(
         board_size=board_size,
         opponent_pools=opponent_pools,
-        opponent_phase=0,
+        opponent_phase=initial_opponent_phase,
         max_construction_steps=max_construction_steps,
-        board_library_path=board_library_path,
-        scaffolding_moves_to_remove=initial_scaffolding,
         phase_map=phase_map,
     )
 
@@ -573,15 +629,14 @@ def train(
         eval_episodes=20,
         win_rate_threshold=0.70,
         valid_rate_threshold=0.90,
-        construction_valid_threshold=0.95,
         min_steps_per_phase=min_phase_steps,
         max_phase=max_phase,
         board_size=board_size,
         opponent_pools=opponent_pools,
-        board_library_path=board_library_path,
         eval_callback_env=eval_env,
         output_dir=output_dir,
         phase_map=phase_map,
+        start_opponent_phase=start_opponent_phase,
         verbose=1,
     )
 
@@ -631,9 +686,23 @@ def train(
     print(f"Monitor progress with: tensorboard --logdir {log_dir}/")
     print("=" * 70)
 
+    callbacks = [phase_callback, checkpoint_callback, eval_callback]
+
+    if self_play:
+        self_play_callback = SelfPlayCallback(
+            output_dir=output_dir,
+            snapshot_freq=snapshot_freq,
+            pool_size=pool_size,
+            warmup_steps=warmup_steps,
+            n_envs=n_envs,
+            phase_callback=phase_callback,
+            verbose=1,
+        )
+        callbacks.append(self_play_callback)
+
     model.learn(
         total_timesteps=total_timesteps,
-        callback=[phase_callback, checkpoint_callback, eval_callback],
+        callback=callbacks,
         progress_bar=True,
     )
 
@@ -646,8 +715,6 @@ def train(
     print("=" * 70)
     print(f"Final model saved to: {final_path}")
     print(f"Best model saved to: {output_dir}/best/best_model.zip")
-    if board_library_path:
-        print(f"Final construction phase: {phase_callback.construction_phase}/{phase_callback.max_construction_phase}")
     print(f"Final opponent phase: {phase_callback.current_phase}")
     print(f"\nPhase history: {output_dir}/phase_history.json")
     print("=" * 70)
@@ -718,6 +785,26 @@ if __name__ == "__main__":
         "--batch-size", type=int, default=64,
         help="Minibatch size (default: 64)",
     )
+    parser.add_argument(
+        "--start-opponent-phase", type=int, default=None,
+        help="Skip construction and start at this opponent phase (use with --resume)",
+    )
+    parser.add_argument(
+        "--self-play", action="store_true",
+        help="Enable self-play with rolling opponent pool",
+    )
+    parser.add_argument(
+        "--snapshot-freq", type=int, default=50_000,
+        help="Steps between self-play snapshots (default: 50,000)",
+    )
+    parser.add_argument(
+        "--pool-size", type=int, default=10,
+        help="Max self-play snapshots to keep (default: 10)",
+    )
+    parser.add_argument(
+        "--warmup-steps", type=int, default=100_000,
+        help="Steps before self-play activates (default: 100,000)",
+    )
 
     args = parser.parse_args()
 
@@ -740,4 +827,9 @@ if __name__ == "__main__":
         ent_coef=args.ent_coef,
         n_steps=args.n_steps,
         batch_size=args.batch_size,
+        start_opponent_phase=args.start_opponent_phase,
+        self_play=args.self_play,
+        snapshot_freq=args.snapshot_freq,
+        pool_size=args.pool_size,
+        warmup_steps=args.warmup_steps,
     )

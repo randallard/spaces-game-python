@@ -13,6 +13,7 @@ Progressive opponent curriculum:
 - Phase 4: All board types mixed
 """
 
+import collections
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -90,15 +91,12 @@ class SimultaneousPlayEnv(gym.Env):
                 raise ValueError(f"Empty board pool: {path}")
             self.opponent_pools.append(boards)
 
-        # Construction scaffolding (reverse curriculum within Stage 3)
-        # scaffolding_moves_to_remove:
-        #   -1 = disabled (no scaffolding, agent builds from scratch)
-        #    0 = easiest (pre-fill all but goal)
-        #    N = remove N non-goal moves + goal from library board
-        self.board_library: List[Board] = []
-        self.scaffolding_moves_to_remove: int = -1  # -1 = disabled
-        if board_library_path is not None:
-            self.board_library = load_boards_from_json(board_library_path)
+        # board_library_path accepted for backward compatibility but ignored
+        # (strict masking makes construction scaffolding unnecessary)
+
+        # Self-play support
+        self._opponent_model = None
+        self.use_self_play = False
 
         # Action space: [cell, type, done]
         self.action_space = spaces.MultiDiscrete([
@@ -163,69 +161,6 @@ class SimultaneousPlayEnv(gym.Env):
         self.supermove_position: Optional[Position] = None
         self.construction_sequence: List[Dict[str, Any]] = []
 
-        # Apply scaffolding if enabled (>= 0) and library loaded
-        if self.scaffolding_moves_to_remove >= 0 and self.board_library:
-            self._prefill_from_library()
-
-    def set_scaffolding(self, moves_to_remove: int) -> None:
-        """Set scaffolding level. Callable via SubprocVecEnv.env_method()."""
-        self.scaffolding_moves_to_remove = moves_to_remove
-
-    def _prefill_from_library(self) -> None:
-        """Pre-fill construction state from a random library board."""
-        board = self.board_library[
-            np.random.randint(len(self.board_library))
-        ]
-        sequence = list(board.sequence)
-        moves_to_remove = min(
-            self.scaffolding_moves_to_remove + 1,  # +1 for goal
-            len(sequence),
-        )
-        partial_sequence = (
-            sequence[:-moves_to_remove] if moves_to_remove > 0
-            else sequence
-        )
-
-        # Reconstruct game state from partial sequence
-        # (mirrors validation.py's is_board_playable() logic)
-        for move in partial_sequence:
-            if move.type == "final":
-                continue
-
-            entry = {
-                "row": move.position.row,
-                "col": move.position.col,
-                "type": move.type,
-                "order": move.order,
-            }
-            self.construction_sequence.append(entry)
-
-            # Update building grid
-            if move.type == "piece":
-                self.building_grid[
-                    move.position.row, move.position.col, 0
-                ] = move.order
-                if self.supermove_active:
-                    self.supermove_active = False
-                    self.supermove_position = None
-                self.piece_visited_positions.add(
-                    f"{move.position.row},{move.position.col}"
-                )
-                self.current_piece_position = move.position
-            elif move.type == "trap":
-                self.building_grid[
-                    move.position.row, move.position.col, 1
-                ] = move.order
-                pos_key = f"{move.position.row},{move.position.col}"
-                self.trap_positions.add(pos_key)
-                if (self.current_piece_position is not None
-                        and move.position.row == self.current_piece_position.row
-                        and move.position.col == self.current_piece_position.col):
-                    self.supermove_active = True
-                    self.supermove_position = move.position
-
-        self.construction_step = len(self.construction_sequence)
-
     # --- Opponent selection ---
 
     def _get_active_pools(self) -> List[List[Board]]:
@@ -271,6 +206,90 @@ class SimultaneousPlayEnv(gym.Env):
 
     # --- Construction logic (adapted from ReverseCurriculumBuilderEnv) ---
 
+    def _can_reach_all_rows(
+        self,
+        extra_trap: Optional[Tuple[int, int]] = None,
+        hypothetical_pos: Optional[Tuple[int, int]] = None,
+    ) -> bool:
+        """BFS reachability check: can the piece visit all required rows AND reach row 0?
+
+        The piece must:
+        1. Be able to visit all rows 0..board_size-1 (via already-visited + reachable)
+        2. Be able to reach a cell at row 0 (to finish the board)
+
+        Args:
+            extra_trap: hypothetical trap position to add (for trap placement checks)
+            hypothetical_pos: hypothetical piece position (for piece move checks)
+
+        Returns:
+            True if both conditions are satisfiable.
+        """
+        size = self.board_size
+
+        # Determine starting position
+        if hypothetical_pos is not None:
+            start_row, start_col = hypothetical_pos
+        elif self.current_piece_position is not None:
+            start_row = self.current_piece_position.row
+            start_col = self.current_piece_position.col
+        else:
+            return False  # No piece placed yet
+
+        # Rows already visited by piece
+        visited_rows = set()
+        for pos_key in self.piece_visited_positions:
+            r, c = pos_key.split(",")
+            visited_rows.add(int(r))
+
+        # If hypothetical_pos, add its row too
+        if hypothetical_pos is not None:
+            visited_rows.add(hypothetical_pos[0])
+
+        required_rows = set(range(size))
+        all_rows_visited = visited_rows >= required_rows
+
+        # Build set of blocked cells (traps + visited piece positions)
+        traps = set(self.trap_positions)
+        if extra_trap is not None:
+            traps.add(f"{extra_trap[0]},{extra_trap[1]}")
+
+        visited_cells = set(self.piece_visited_positions)
+        if hypothetical_pos is not None:
+            visited_cells.add(f"{hypothetical_pos[0]},{hypothetical_pos[1]}")
+
+        # If all rows visited AND piece is at row 0, no BFS needed
+        if all_rows_visited and start_row == 0:
+            return True
+
+        # BFS from start position through unvisited, non-trap cells
+        queue = collections.deque()
+        queue.append((start_row, start_col))
+        bfs_visited = {(start_row, start_col)}
+        reachable_rows = set(visited_rows)
+        reachable_rows.add(start_row)
+        can_reach_row0 = start_row == 0
+
+        while queue:
+            r, c = queue.popleft()
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if nr < 0 or nr >= size or nc < 0 or nc >= size:
+                    continue
+                if (nr, nc) in bfs_visited:
+                    continue
+                cell_key = f"{nr},{nc}"
+                if cell_key in traps:
+                    continue
+                if cell_key in visited_cells:
+                    continue
+                bfs_visited.add((nr, nc))
+                reachable_rows.add(nr)
+                if nr == 0:
+                    can_reach_row0 = True
+                queue.append((nr, nc))
+
+        return reachable_rows >= required_rows and can_reach_row0
+
     def _is_valid_placement(self, row: int, col: int, move_type: str) -> bool:
         """Check if placement at (row, col) of given type is valid."""
         if row < 0 or row >= self.board_size or col < 0 or col >= self.board_size:
@@ -296,6 +315,10 @@ class SimultaneousPlayEnv(gym.Env):
                         col == self.supermove_position.col):
                     return False
 
+            # Level 2: BFS reachability - can piece still reach all rows?
+            if not self._can_reach_all_rows(hypothetical_pos=(row, col)):
+                return False
+
             return True
 
         elif move_type == "trap":
@@ -314,11 +337,36 @@ class SimultaneousPlayEnv(gym.Env):
             same_pos = (row == self.current_piece_position.row and
                         col == self.current_piece_position.col)
             if same_pos:
-                return True
+                # Supermove trap: check that at least one adjacent escape cell
+                # exists AND from that escape cell all rows remain reachable
+                has_escape = False
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = row + dr, col + dc
+                    if nr < 0 or nr >= self.board_size or nc < 0 or nc >= self.board_size:
+                        continue
+                    cell_key = f"{nr},{nc}"
+                    if cell_key in self.trap_positions:
+                        continue
+                    if cell_key in self.piece_visited_positions:
+                        continue
+                    # Check reachability from this escape cell with the new trap
+                    if self._can_reach_all_rows(
+                        extra_trap=(row, col), hypothetical_pos=(nr, nc),
+                    ):
+                        has_escape = True
+                        break
+                return has_escape
 
-            return _is_adjacent_orthogonal(
+            if not _is_adjacent_orthogonal(
                 self.current_piece_position, Position(row=row, col=col),
-            )
+            ):
+                return False
+
+            # Level 2: BFS reachability - does this trap block all paths?
+            if not self._can_reach_all_rows(extra_trap=(row, col)):
+                return False
+
+            return True
 
         return False
 
@@ -376,10 +424,17 @@ class SimultaneousPlayEnv(gym.Env):
             type_mask[1] = 1 if has_valid_trap else 0
 
         # Done mask [continue, finish]
+        # Must be at row 0, not in supermove, AND have visited all rows
+        visited_rows = set()
+        for pos_key in self.piece_visited_positions:
+            r, _ = pos_key.split(",")
+            visited_rows.add(int(r))
+        all_rows_visited = visited_rows >= set(range(self.board_size))
         can_finish = (
             self.current_piece_position is not None
             and self.current_piece_position.row == 0
             and not self.supermove_active
+            and all_rows_visited
         )
         done_mask = np.array([1, 1 if can_finish else 0], dtype=np.int8)
 
@@ -415,9 +470,14 @@ class SimultaneousPlayEnv(gym.Env):
 
         # Ensure final/goal move exists
         if not any(m.type == "final" for m in sequence):
-            last_col = self._get_last_move_column()
+            # Goal column must match piece's current column
+            goal_col = (
+                self.current_piece_position.col
+                if self.current_piece_position is not None
+                else self._get_last_move_column()
+            )
             sequence.append(BoardMove(
-                position=Position(row=-1, col=last_col),
+                position=Position(row=-1, col=goal_col),
                 type="final",
                 order=len(sequence) + 1,
             ))
@@ -486,6 +546,9 @@ class SimultaneousPlayEnv(gym.Env):
             dtype=np.int32,
         )
 
+        # Track agent's boards for opponent history in self-play
+        self._agent_boards_this_game: List[Board] = []
+
         # Reset construction state for round 0
         self._init_construction_state()
 
@@ -542,9 +605,6 @@ class SimultaneousPlayEnv(gym.Env):
                     self.supermove_position = None
                 self.piece_visited_positions.add(f"{row},{col}")
                 self.current_piece_position = Position(row=row, col=col)
-                reward += 0.1
-                if row == 0:
-                    reward += 0.3  # Top row - can reach goal
 
             elif move_type == "trap":
                 self.trap_positions.add(f"{row},{col}")
@@ -553,9 +613,6 @@ class SimultaneousPlayEnv(gym.Env):
                         col == self.current_piece_position.col):
                     self.supermove_active = True
                     self.supermove_position = Position(row=row, col=col)
-                    reward += 0.2  # Supermove bonus
-                else:
-                    reward += 0.1
 
             self.construction_step += 1
 
@@ -567,8 +624,8 @@ class SimultaneousPlayEnv(gym.Env):
             return obs, reward, False, False, info
 
         else:
-            # Invalid placement
-            reward = -2.0
+            # Can occur with MultiDiscrete masking (cell valid for one type
+            # but agent chose the other). No penalty - just skip the step.
             obs = self._get_observation()
             info = {
                 "round": self.current_round,
@@ -587,12 +644,20 @@ class SimultaneousPlayEnv(gym.Env):
         agent_board = self._construct_board_from_state()
         is_valid = not forced_invalid and is_board_playable(agent_board)
 
-        # Select opponent's board
-        opponent_board = self._select_opponent_board()
+        # Track agent's board for self-play opponent history
+        if is_valid:
+            self._agent_boards_this_game.append(agent_board)
+
+        # Select opponent's board (self-play or JSON pool)
+        opponent_board = None
+        if self.use_self_play and self._opponent_model is not None:
+            opponent_board = self._build_opponent_board_from_model()
+        if opponent_board is None:
+            opponent_board = self._select_opponent_board()
 
         if not is_valid:
-            # Invalid board penalty - opponent wins round by default
-            reward += -20.0
+            # Invalid board fallback (shouldn't happen with strict masking)
+            reward += -10.0
             agent_round_score = 0
             opponent_round_score = 5  # Default win for opponent
         else:
@@ -607,12 +672,10 @@ class SimultaneousPlayEnv(gym.Env):
             opponent_round_score = result.opponentPoints
             score_diff = agent_round_score - opponent_round_score
 
-            reward += float(score_diff) * 5.0
+            reward += float(score_diff) * 2.0
             if agent_round_score > opponent_round_score:
-                reward += 10.0
-            elif agent_round_score == opponent_round_score:
-                reward += 0.0  # Tie is neutral per round
-            else:
+                reward += 5.0
+            elif agent_round_score < opponent_round_score:
                 reward += -5.0
 
         # Update game state
@@ -631,9 +694,9 @@ class SimultaneousPlayEnv(gym.Env):
         # Episode-end bonus
         if terminated:
             if self.agent_total_score > self.opponent_total_score:
-                reward += 50.0
+                reward += 25.0
             elif self.agent_total_score < self.opponent_total_score:
-                reward += -50.0
+                reward += -25.0
 
         # Reset construction state for next round (if not terminated)
         if not terminated:
@@ -664,6 +727,106 @@ class SimultaneousPlayEnv(gym.Env):
     def set_opponent_phase(self, phase: int) -> None:
         """Set opponent phase. Callable via SubprocVecEnv.env_method()."""
         self.opponent_phase = phase
+
+    # --- Self-play opponent model support ---
+
+    def set_opponent_model(self, model_path: str) -> None:
+        """Load opponent model from path. Callable via SubprocVecEnv.env_method().
+
+        Takes a string path (not model object) for SubprocVecEnv pickle compatibility.
+        """
+        from sb3_contrib import MaskablePPO
+        self._opponent_model = MaskablePPO.load(model_path)
+        self.use_self_play = True
+
+    def clear_opponent_model(self) -> None:
+        """Revert to JSON pool opponents."""
+        self._opponent_model = None
+        self.use_self_play = False
+
+    def _build_opponent_board_from_model(self) -> Optional[Board]:
+        """Build opponent board using the loaded opponent model.
+
+        Mirrors the manual construction pattern from inference_server/inference.py.
+        The opponent sees swapped scores (it thinks it's the agent).
+        Returns None if the model produces an invalid board.
+        """
+        if self._opponent_model is None:
+            return None
+
+        max_steps = self.max_construction_steps
+
+        # Create a temporary env for opponent construction
+        opp_env = SimultaneousPlayEnv(
+            board_size=self.board_size,
+            opponent_pools=self.opponent_pool_paths,
+            max_construction_steps=max_steps,
+            phase_map=self.phase_map,
+        )
+        opp_env.reset(seed=np.random.randint(100000))
+
+        # Set opponent context: swapped scores, agent's boards as opponent history
+        opp_env.current_round = self.current_round
+        opp_env.agent_total_score = self.opponent_total_score  # swapped
+        opp_env.opponent_total_score = self.agent_total_score  # swapped
+
+        # Encode agent's previous boards into opponent's history (rotated)
+        if hasattr(self, '_agent_boards_this_game'):
+            for i, board in enumerate(self._agent_boards_this_game):
+                if i < self.ROUNDS_PER_GAME:
+                    opp_env.opponent_history_grids[i] = (
+                        opp_env._encode_opponent_board(board)
+                    )
+
+        obs = opp_env._get_observation()
+
+        for _ in range(max_steps):
+            masks = opp_env.action_masks()
+            action, _ = self._opponent_model.predict(
+                obs, deterministic=False, action_masks=masks,
+            )
+
+            # Check done flag
+            if int(action[2]) > 0:
+                break
+
+            # Apply construction step manually
+            cell = int(action[0]) % (self.board_size * self.board_size)
+            piece_or_trap = int(action[1]) % 2
+            row = cell // self.board_size
+            col = cell % self.board_size
+            move_type = "piece" if piece_or_trap == 0 else "trap"
+            order = opp_env.construction_step + 1
+
+            if opp_env._is_valid_placement(row, col, move_type):
+                opp_env.construction_sequence.append({
+                    "row": row, "col": col, "type": move_type, "order": order,
+                })
+                if move_type == "piece":
+                    opp_env.building_grid[row, col, 0] = order
+                    if opp_env.supermove_active:
+                        opp_env.supermove_active = False
+                        opp_env.supermove_position = None
+                    opp_env.piece_visited_positions.add(f"{row},{col}")
+                    opp_env.current_piece_position = Position(row=row, col=col)
+                elif move_type == "trap":
+                    opp_env.building_grid[row, col, 1] = order
+                    opp_env.trap_positions.add(f"{row},{col}")
+                    if (opp_env.current_piece_position is not None and
+                            row == opp_env.current_piece_position.row and
+                            col == opp_env.current_piece_position.col):
+                        opp_env.supermove_active = True
+                        opp_env.supermove_position = Position(row=row, col=col)
+                opp_env.construction_step += 1
+
+            obs = opp_env._get_observation()
+
+        board = opp_env._construct_board_from_state()
+        opp_env.close()
+
+        if is_board_playable(board):
+            return board
+        return None
 
     def render(self):
         pass

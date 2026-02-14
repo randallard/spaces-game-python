@@ -178,17 +178,16 @@ See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, an
 - **Stage 2 - Reverse Curriculum**: Obsolete (replaced by construction scaffolding in Stage 3)
 - **Stage 3 - Simultaneous 5-Round Play**: Blind board construction + opponent adaptation
   - Size 2 + 3: Complete (Feb 12, 2026). All opponent phases cleared.
-  - Size 4: In progress. Requires tuned hyperparameters for larger action space.
+  - Size 4: Self-play training in progress (Feb 14, 2026).
+  - Feb 14 rework: strict action masking (invalid boards impossible), scaffolding removed, rewards simplified, self-play added.
 
-### Current: Size 4 Training
+### Current: Size 4 Self-Play Training
 
-Size 4 training requires adjusted hyperparameters — the 4x4 action space is too large for size 2/3 defaults. CLI flags now support per-run tuning:
+Strict masking + self-play replaces the old scaffolding + random opponent approach. The agent plays against frozen copies of itself, learning from opponents that have actual patterns to exploit.
 
 ```bash
-# Size 4 with tuned hyperparameters
-python examples/train_simultaneous.py --size 4 --board-library new_boards_4.json \
-    --timesteps 10000000 --min-phase-steps 100000 \
-    --learning-rate 1e-4 --ent-coef 0.1 --n-steps 4096
+# Size 4 with self-play
+python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
 ```
 
 ### Next: Stage 4 (Fog of War)
