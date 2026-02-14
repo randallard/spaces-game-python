@@ -241,3 +241,37 @@ Key insight: `--warmup-steps 0` because the model is already competent. The firs
 Self-play requires a **stable base policy**. For size 4 (16-cell board, complex action space), 100k steps of warmup isn't nearly enough — the model needs 1M+ steps just to learn valid construction. The safe approach: train against pool opponents first until valid rate stabilizes at 95%+, *then* layer self-play on top with `--resume`.
 
 This is a well-known pattern in competitive RL: AlphaGo trained supervised learning from human games before switching to self-play. You can't bootstrap from nothing when the action space is large enough that random play produces no useful signal.
+
+---
+
+## Addendum 2: Reward Mismatch — The Second Collapse
+
+The resumed self-play run also collapsed, just slower. Valid rate started at 99% (the pre-trained model retained its knowledge) but steadily fell: 99% → 75% → 62% → 49% over 64k steps. Same death spiral, higher starting point.
+
+TensorBoard revealed the deeper problem: **explained variance was negative the entire run** (-0.59 to -0.49). The value network wasn't just bad — it was *anti-correlated* with actual returns. It was actively predicting the wrong direction.
+
+Root cause: the resumed model was trained for 2.5M steps under the **old reward structure** (+0.1 per piece placement, +0.3 for reaching row 0, +0.2 for supermove, round win = score_diff * 5.0 + 10.0, game win = +50.0). We changed the rewards in the rework (0.0 for construction, round win = score_diff * 2.0 + 5.0, game win = +25.0). The policy network's weights were fine — it still knew how to build boards. But the value network's predictions were completely miscalibrated. It expected +50 for a game win and got +25. Expected +0.1 for placing a piece and got 0. Every value estimate was wrong, which corrupted the advantage calculation, which corrupted the policy gradient.
+
+Self-play made this worse because the non-stationary opponent added another source of prediction error on top of the reward mismatch.
+
+### The Fix: Three-Phase Training
+
+1. **Phase A** (done): Train from scratch against pool opponents with old rewards → converged at 50% win rate, 96% valid
+2. **Phase B** (now): Resume from Phase A *without* self-play, new rewards → let the value network recalibrate against stable pool opponents
+3. **Phase C** (next): Resume from Phase B *with* `--self-play --warmup-steps 0` → self-play against a model whose value network actually works
+
+```bash
+# Phase B (running now)
+python examples/train_simultaneous.py --size 4 \
+    --resume models/size4/stage3/ppo_stage3_final.zip --timesteps 2000000
+
+# Phase C (after Phase B converges)
+python examples/train_simultaneous.py --size 4 --self-play --warmup-steps 0 \
+    --resume models/size4/stage3/ppo_stage3_final.zip --timesteps 5000000
+```
+
+### Lesson Learned
+
+When changing reward structure mid-training, the **value network must recalibrate** before introducing additional instability (like self-play). The policy network transfers well because the action semantics haven't changed — "place piece at (2,1)" still means the same thing. But the value network's job is to predict *cumulative future reward*, and when the reward scale changes, every prediction is wrong. PPO's advantage estimates depend on accurate value predictions, so a miscalibrated value network corrupts the policy gradient even if the policy itself is good.
+
+The general rule: **one source of non-stationarity at a time.** Don't change reward structure AND add self-play simultaneously.
