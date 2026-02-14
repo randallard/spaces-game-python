@@ -209,3 +209,35 @@ The question is whether self-play breaks through the 50% ceiling that random opp
 ---
 
 *You can't learn to outplay an opponent that doesn't have a strategy. Random pools taught the agent to build valid boards; self-play teaches it to build winning ones.*
+
+---
+
+## Addendum: Policy Collapse and the Warmup Lesson (Same Day)
+
+The initial 5M-step self-play run from scratch (`--self-play --timesteps 5000000`) collapsed within 30 minutes. TensorBoard told the story:
+
+| Metric | Peak (88k steps) | Collapse (120-144k) | Notes |
+|---|---|---|---|
+| Valid rate | 75% | 0-4% | Catastrophic forgetting |
+| Win rate | 10% | 0% | Never learned to win |
+| Avg reward | -54 | -75 | Getting worse |
+| Explained variance | 0.15 | -0.14 to 0.27 | Value net barely learning |
+
+The valid rate climbed to 75% during warmup (100k steps), then cratered the moment self-play activated. Root cause: **the warmup was too short**. The first self-play snapshot was taken from a model with only 14% valid rate (at 25k n_calls). The agent played against a terrible version of itself, producing garbage training signal. Bad snapshots led to worse policy which led to worse snapshots — a death spiral.
+
+### The Fix: Two-Phase Training
+
+Instead of training from scratch with self-play, resume from last night's converged model (2.5M steps, opponent phase 6, 50% win rate, 96%+ valid rate):
+
+```bash
+python examples/train_simultaneous.py --size 4 --self-play --warmup-steps 0 \
+    --resume models/size4/stage3/ppo_stage3_final.zip --timesteps 5000000
+```
+
+Key insight: `--warmup-steps 0` because the model is already competent. The first self-play snapshot is a copy of the pre-trained model, so opponents are competent from step 1. No warmup needed — the foundation is already solid.
+
+### Lesson Learned
+
+Self-play requires a **stable base policy**. For size 4 (16-cell board, complex action space), 100k steps of warmup isn't nearly enough — the model needs 1M+ steps just to learn valid construction. The safe approach: train against pool opponents first until valid rate stabilizes at 95%+, *then* layer self-play on top with `--resume`.
+
+This is a well-known pattern in competitive RL: AlphaGo trained supervised learning from human games before switching to self-play. You can't bootstrap from nothing when the action space is large enough that random play produces no useful signal.

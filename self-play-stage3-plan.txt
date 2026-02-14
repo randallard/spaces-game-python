@@ -1,0 +1,220 @@
+ Context
+
+ The size-4 agent has plateaued at ~50% win rate at opponent phase 6 for 12M+ total steps. Root cause: opponents are randomly
+ selected from JSON pools, so the game's rock-paper-scissors dynamics mean 50% is roughly the ceiling. The opponent_history
+ observation is wasted since random opponents have no patterns to exploit. The value network struggles (explained_variance
+ ~0.25) partly because outcomes are genuinely unpredictable against random play.
+
+ This rework addresses four issues:
+ 1. ~2% invalid boards waste training signal (strict masking)
+ 2. Construction scaffolding curriculum is unnecessary with strict masking (remove it)
+ 3. Construction reward shaping is noise at this point (simplified rewards)
+ 4. Random opponents cap strategic learning (self-play)
+
+ Phase 1: Strict Action Masking
+
+ Goal: Make invalid boards structurally impossible.
+
+ Files to modify
+
+ - spaces_game/simultaneous_play_env.py
+
+ Changes
+
+ 1a. Add _can_reach_all_rows() BFS helper
+ - Add import collections at top
+ - New method: BFS from current (or hypothetical) piece position through cells that aren't traps, aren't already visited by
+ piece, and are in-bounds
+ - Parameters: extra_trap=(row,col) for hypothetical trap placement, hypothetical_pos=(row,col) for hypothetical piece move
+ - Returns True if all required rows (0 through board_size-1) not yet visited by piece are reachable from BFS
+ - Cost: trivial for sizes 2-4 (max 16 cells)
+
+ 1b. Add Level 2 check to _is_valid_placement() (line 274)
+ - For piece moves: after existing checks pass, call _can_reach_all_rows(hypothetical_pos=(row, col)). Return False if
+ unreachable.
+ - For trap moves (non-supermove): call _can_reach_all_rows(extra_trap=(row, col)). Return False if trap blocks all paths.
+ - For supermove traps: check that at least one adjacent escape cell exists AND from that escape cell all rows remain reachable
+ (with the new trap blocking the current position)
+
+ 1c. Strengthen finish mask in action_masks() (line 379)
+ - Add check: all rows 0..board_size-1 must have been visited by piece (check piece_visited_positions)
+ - This catches the case where piece is at row 0 but skipped a middle row
+
+ 1d. Add tests in tests/test_strict_masking.py
+ - Path blocked by trap
+ - Supermove deadlock prevention
+ - Finish only when all rows visited
+ - Coverage for sizes 2, 3, 4
+
+ Phase 2: Remove Construction Scaffolding
+
+ Goal: Eliminate the construction curriculum entirely. With strict masking, every action produces a valid-path board - the agent
+  doesn't need to be taught "what a valid board looks like."
+
+ Files to modify
+
+ - spaces_game/simultaneous_play_env.py
+ - examples/train_simultaneous.py
+
+ Changes
+
+ 2a. Remove scaffolding from env
+ - Remove set_scaffolding() method and scaffolding_moves_to_remove attribute
+ - Remove _prefill_from_library() method (~50 lines, lines 174-227)
+ - Remove board_library_path / board_library attributes and loading logic
+ - Remove scaffolding handling in _init_construction_state()
+ - Keep board_library_path as a CLI arg but make it a no-op with a deprecation warning
+
+ 2b. Remove construction curriculum from OpponentProgressionCallback
+ - Remove in_construction_mode, construction_phase, max_construction_phase tracking
+ - Remove _maybe_advance_construction() method
+ - Remove construction-related logging and checkpointing
+ - The callback now only manages opponent phases (or self-play evaluation)
+
+ 2c. Remove --board-library handling from training script
+ - Keep the CLI flag for backward compatibility but print a warning that it's ignored
+ - Remove scaffolding_moves_to_remove from env_kwargs
+ - Remove construction phase display from training header
+
+ Why this is safe
+
+ - Strict masking guarantees the agent always builds completable boards from step 1
+ - Early boards will have random/poor strategy but will always be structurally valid
+ - The agent learns strategy through game outcomes (wins/losses) rather than construction guidance
+ - This saves millions of steps previously spent on construction phases (MaskablePPO_1 spent 6.3M steps)
+
+ Phase 3: Simplified Rewards
+
+ Goal: Remove construction shaping, focus rewards on game outcomes.
+
+ Files to modify
+
+ - spaces_game/simultaneous_play_env.py
+
+ Changes
+
+ 3a. Remove construction step rewards in step() (lines 545-558)
+ - Remove: +0.1 piece, +0.3 row 0, +0.2 supermove, +0.1 trap
+ - Valid placements get reward = 0.0
+
+ 3b. Remove invalid placement penalty (lines 569-578)
+ - With strict masking, MaskablePPO can't select invalid placements
+ - Keep the else branch with reward = 0.0 and a warning log (safety net)
+
+ 3c. Simplify round/game rewards in _finish_round() (lines 593-636)
+ - Round: score_diff * 2.0 + win bonus +5.0 / loss penalty -5.0
+ - Game: win +25.0 / loss -25.0
+ - Invalid board fallback (shouldn't happen): -10.0
+
+ Phase 4: Self-Play with Rolling Opponent Pool
+
+ Goal: Replace random pool opponents with frozen copies of the agent itself.
+
+ Files to modify
+
+ - spaces_game/simultaneous_play_env.py
+ - examples/train_simultaneous.py
+
+ Env changes (simultaneous_play_env.py)
+
+ 4a. Add opponent model support to __init__()
+ - New attributes: opponent_model, use_self_play, opponent_pool_paths
+ - New method: set_opponent_model(model_path: str) - loads MaskablePPO from path, sets use_self_play = True
+   - Takes string path (not model object) for SubprocVecEnv pickle compatibility
+ - New method: clear_opponent_model() - reverts to JSON pool
+
+ 4b. Add _build_opponent_board_from_model() method
+ - Mirror build_board_for_round() from inference_server/inference.py:139-243
+ - Create temporary SimultaneousPlayEnv for opponent construction
+ - Opponent sees swapped scores (it thinks it's the agent)
+ - Run opponent model with action masks in a loop until done signal
+ - Manual construction steps (same pattern as inference.py)
+ - Fall back to JSON pool if model produces invalid board
+
+ 4c. Track agent boards for opponent history
+ - Add agent_boards_this_game: List[Board] to env
+ - Append agent_board in _finish_round() after construction
+ - Encode agent's boards into opponent's opponent_history_grids (rotated) so opponent can adapt
+ - Reset in reset()
+
+ 4d. Modify _finish_round() (line 591)
+ - If use_self_play and opponent_model, call _build_opponent_board_from_model()
+ - Otherwise fall back to _select_opponent_board()
+
+ Training script changes (train_simultaneous.py)
+
+ 4e. New SelfPlayCallback
+ - snapshot_freq: steps between snapshots (default 50k)
+ - pool_size: max snapshots to keep (default 10)
+ - warmup_steps: use JSON pools until this many steps (default 50k - agent needs basic construction ability before self-play is
+ useful)
+ - Every snapshot_freq steps after warmup:
+   - Save current model to {output_dir}/opponent_pool/snapshot_{n_calls}.zip
+   - Prune oldest if pool exceeds pool_size
+   - Assign random snapshot to each training env via env_method("set_opponent_model", path)
+ - Mix in JSON pool boards: ~20% of episodes use fallback (prevents self-play collapse)
+
+ 4f. New CLI flags
+ - --self-play (action="store_true")
+ - --snapshot-freq (default 50000)
+ - --pool-size (default 10)
+ - --warmup-steps (default 100000)
+
+ 4g. Modify OpponentProgressionCallback for self-play mode
+ - Add self_play_enabled parameter
+ - When True: skip opponent phase advancement, still log evaluation metrics (win rate, valid rate, avg reward)
+ - During warmup (before self-play activates), opponent pool phases still advance normally
+
+ 4h. VecEnv strategy
+ - Keep SubprocVecEnv as default (opponent model loading per subprocess is fine, models are small)
+ - Each subprocess loads its own copy via set_opponent_model(path)
+ - If memory becomes an issue, add --dummy-vec-env flag to switch
+
+ Phase 5: Skill Level Snapshots
+
+ Goal: Map self-play timeline to the 6 skill tiers for the inference server.
+
+ Files to modify
+
+ - examples/train_simultaneous.py (in SelfPlayCallback)
+
+ Changes
+
+ 5a. Save skill checkpoints at training end
+ - In SelfPlayCallback._on_training_end():
+ - Divide snapshot timeline into 6 tiers (beginner through advanced_plus)
+ - Copy representative snapshot for each tier to {output_dir}/ with names like beginner_checkpoint.zip
+ - These names are picked up by ModelRegistry._assign_checkpoints() existing pattern matching
+
+ 5b. Save milestone checkpoints during training
+ - Track best win rate seen
+ - First time eval win rate > 55%: save beginner
+ - First time > 65%: save intermediate
+ - Training end: save as expert/advanced
+ - These are saved alongside the pool snapshots
+
+ Implementation Order
+
+ 1. Phase 1 (strict masking) - implement and test independently
+ 2. Phase 2 (remove scaffolding) - depends on Phase 1
+ 3. Phase 3 (simplified rewards) - depends on Phase 1 being verified
+ 4. Phase 4 (self-play) - largest change, depends on 1+2+3
+ 5. Phase 5 (skill snapshots) - straightforward, depends on 4
+
+ Verification
+
+ After each phase:
+ 1. pytest tests/ - all existing tests pass
+ 2. Phase 1: Run training for 10k steps, verify 0% invalid boards in logs
+ 3. Phase 2: Verify scaffolding code removed, training starts immediately with opponent play
+ 4. Phase 3: Run training for 50k steps, verify convergence still occurs with simplified rewards
+ 5. Phase 4: Run --self-play --timesteps 500000 --size 2 first (fast feedback), verify opponent snapshots created, win rate
+ changes over time
+ 6. Phase 5: Check models/size{N}/stage3/ contains skill-level checkpoint files, verify inference server picks them up
+
+ Risk Mitigations
+
+ - BFS cost: Max 16 cells for size 4, called per candidate action. Profile if training fps drops >10%.
+ - Self-play collapse: 20% JSON pool mix + stochastic opponent prediction + rolling pool diversity
+ - Memory: Each opponent model <10MB. Subprocess loading is fine for 4 envs.
+ - Backward compatibility: JSON pool opponents remain as fallback. --self-play is opt-in.

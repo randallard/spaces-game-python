@@ -650,10 +650,11 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 **Immediate**:
 - ✅ Size 2 + 3 retrained with all fixes (Feb 12) — all phases cleared
 - ✅ Strict masking + self-play rework (Feb 14) — scaffolding removed, rewards simplified
-- Size 4 self-play training in progress (5M steps)
+- Size 4 self-play from scratch collapsed (warmup too short → policy collapse)
+- Restarted: `--resume` from last night's converged model + `--warmup-steps 0` (5M steps)
 
 **Short-term**:
-- Evaluate size 4 self-play results — does win rate break past 50%?
+- Evaluate size 4 resumed self-play results — does win rate break past 50%?
 - Deploy size 4 model to inference server
 - Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
 
@@ -694,4 +695,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Size 2 + 3 complete (Feb 12). Size 4 self-play training in progress (Feb 14).** Stage 3 reworked: strict action masking (BFS reachability) makes invalid boards impossible, construction scaffolding removed, rewards simplified, self-play with rolling opponent pool added. Size 4 running with `--self-play --timesteps 5000000`.
+Current Status: **Size 2 + 3 complete (Feb 12). Size 4 self-play training in progress (Feb 14).** Stage 3 reworked: strict action masking (BFS reachability) makes invalid boards impossible, construction scaffolding removed, rewards simplified, self-play with rolling opponent pool added. Initial from-scratch self-play collapsed (warmup too short, policy collapse). Restarted by resuming from the converged pool-opponent model with `--warmup-steps 0`.

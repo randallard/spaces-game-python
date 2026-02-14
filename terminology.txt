@@ -1,0 +1,147 @@
+● Here's what I see:
+
+  Current run status:
+  - Running for ~15 minutes (started 08:54)
+  - At ~100k n_calls = ~400k timesteps out of 5M (~8% complete)
+  - 1 self-play snapshot created (at 25k n_calls)
+  - Self-play warmup just completed — opponent pool is now active
+  - Skill milestones from the previous run exist (beginner, intermediate, expert) but the new run hasn't saved its own yet
+  - 4 subprocess workers, ~94% CPU on main process
+
+  ---
+  Now, for RL terminology — here's how practitioners would phrase these questions:
+
+  What you mean: "How's training going?"
+  Industry term: "What are the training curves looking like?" or "How's convergence?"
+  ────────────────────────────────────────
+  What you mean: "Is it getting better?"
+  Industry term: "Is the return increasing?" (return = cumulative reward per episode)
+  ────────────────────────────────────────
+  What you mean: "Is it winning more?"
+  Industry term: "What's the win rate?" or "How's the evaluation metric?"
+  ────────────────────────────────────────
+  What you mean: "Is it actually learning or just memorizing?"
+  Industry term: "Is the policy generalizing?" or "How's out-of-distribution performance?"
+  ────────────────────────────────────────
+  What you mean: "Is it stuck?"
+  Industry term: "Has it plateaued?" or "Is the loss still decreasing?"
+  ────────────────────────────────────────
+  What you mean: "Is the reward signal working?"
+  Industry term: "What's the explained variance?" (how well the value network predicts returns — 1.0 = perfect, <0.3 = poor)
+  ────────────────────────────────────────
+  What you mean: "Is it trying random stuff vs. doing something smart?"
+  Industry term: "What's the entropy?" (high = exploring, low = exploiting a learned strategy)
+  ────────────────────────────────────────
+  What you mean: "How far along is it?"
+  Industry term: "How many timesteps in?" or "What's the sample efficiency?"
+  ────────────────────────────────────────
+  What you mean: "Will more training help?"
+  Industry term: "Has it converged?" or "Is there still signal in the gradient?"
+  ────────────────────────────────────────
+  What you mean: "Is self-play working?"
+  Industry term: "Is it avoiding self-play collapse?" or "Is the Elo increasing?"
+
+  The key metrics to watch for this run:
+  - Return (episode reward) — should trend upward
+  - Win rate — the evaluation callback logs this
+  - Valid rate — should be ~100% with strict masking
+  - Explained variance — was stuck at ~0.25 in the old run; we want this climbing
+  - Entropy — should start high and gradually decrease as the policy sharpens
+  - Policy loss / Value loss — should decrease over time
+
+  You can check these in TensorBoard if logging is enabled, or in the console output in your tmux session. Want me to check the
+  tmux output for live metrics?
+
+
+  I had them check tensor stats
+
+
+  ● Yeah, this is not good. Here's the diagnosis:
+
+  The training is collapsing. In RL terms, this is called catastrophic forgetting or policy collapse.
+
+  The numbers tell the story:
+
+  ┌─────────────────────┬─────────────┬────────────┬──────────────────────────────────────┐
+  │       Metric        │ Early (24k) │ Now (152k) │               Verdict                │
+  ├─────────────────────┼─────────────┼────────────┼──────────────────────────────────────┤
+  │ Valid rate          │ 72%         │ 0-30%      │ Collapsing                           │
+  ├─────────────────────┼─────────────┼────────────┼──────────────────────────────────────┤
+  │ Win rate            │ 0%          │ 0%         │ Never learned to win                 │
+  ├─────────────────────┼─────────────┼────────────┼──────────────────────────────────────┤
+  │ Avg reward          │ -54         │ -75        │ Getting worse                        │
+  ├─────────────────────┼─────────────┼────────────┼──────────────────────────────────────┤
+  │ Explained variance  │ 0.15        │ 0.15-0.27  │ Value net is barely learning         │
+  ├─────────────────────┼─────────────┼────────────┼──────────────────────────────────────┤
+  │ Rollout ep_rew_mean │ -44         │ +20        │ Misleading (training envs, not eval) │
+  └─────────────────────┴─────────────┴────────────┴──────────────────────────────────────┘
+
+  The valid rate climbed to 75% by step 88k, then cratered to 0-4% around step 112-144k. That's exactly when self-play kicked in
+  (~100k steps = 25k n_calls). The self-play opponent is producing boards that are confusing the agent so badly it's forgetting
+  how to build valid boards itself.
+
+  Terminology for what you're seeing:
+
+  - Policy collapse — the agent's strategy degenerates, losing previously learned skills
+  - Catastrophic forgetting — new training signal (self-play opponents) overwrites what was learned during warmup
+  - Non-stationary environment — self-play changes the opponent as the agent trains, creating a moving target
+  - Warm start too short — 100k steps wasn't enough to establish a stable policy before introducing self-play
+
+  The warmup period (100k steps) was way too short for size 4. The agent barely learned to build valid boards before we threw
+  self-play opponents at it. Want me to kill this run and restart with a longer warmup, or should we try a different approach?
+
+  ❯ its only at 3% - not going to recover?
+
+● It could — the latest point jumped from 4% to 30% valid rate, and ep_rew_mean is actually positive (+22). PPO can be resilient.
+   But the problem is structural: the self-play opponent snapshot was taken at 25k n_calls when the agent itself only had ~14%
+  valid rate. So it's playing against a terrible version of itself, and future snapshots will be taken from this collapsing
+  policy. It's a death spiral — bad snapshots produce bad training signal which produces worse snapshots.
+
+  At 3% through there's time, but the self-play mechanism is actively working against recovery. I'd recommend killing it and
+  restarting with one of these approaches:
+
+  1. Longer warmup — set --warmup-steps 1000000 (1M) so the agent has a solid foundation before self-play kicks in
+  2. Two-phase training — first train without --self-play until valid rate is stable at 95%+, then --resume with --self-play
+  3. Hybrid — keep pool opponents during self-play warmup but require 90%+ valid rate before the first snapshot is taken (code
+  change)
+
+  ❯ ok well - we have the training that finished up last night - can we resume with self play from that?
+
+● That's the move. That model already has 96-100% valid rate and 50% win rate — exactly the solid foundation self-play needs. Let
+   me confirm the model path and kill the current run.
+
+● Read 1 file (ctrl+o to expand)
+
+● That's it — ppo_stage3_final.zip from 02:16 last night. The resume command would be:
+
+  python examples/train_simultaneous.py --size 4 --self-play --warmup-steps 0 --resume models/size4/stage3/ppo_stage3_final.zip
+  --timesteps 5000000
+
+  The key: --warmup-steps 0 because the model is already trained — no need for a warmup period against pool opponents. Self-play
+  starts immediately with a competent agent.
+
+  Want to kill the current run in tmux and kick this off? Or do you want me to double-check the --resume flag handles self-play
+  correctly first — making sure the first snapshot is taken from the loaded model, not a random init?
+
+❯ I'll kill and start but go ahead and check that resume functionality first
+
+● Read 1 file (ctrl+o to expand)
+
+● Two issues with --warmup-steps 0:
+
+  1. Line 379-389: total_steps = self.n_calls * self.n_envs. On the very first step, n_calls=1, total_steps=4. With
+  warmup_steps=0, it immediately enters the warmup-complete block and takes a snapshot. That's actually fine — it'll snapshot the
+   resumed model right away. Good.
+  2. Line 391: self.n_calls - self._last_snapshot_step >= self.snapshot_freq. After the first snapshot, _last_snapshot_step = 1
+  (n_calls at that point). So the next snapshot fires at n_calls=50001. That's correct.
+  3. Line 664: Resume loads the model and attaches it to the new env. The loaded model's weights are preserved. Self-play
+  snapshot at step 1 will be a copy of last night's trained model. Good — the opponents start competent.
+
+  One thing to flag: the resumed model won't have TensorBoard continuity. It starts a new MaskablePPO_5 log dir. The step counter
+   also resets to 0 in the new run. That's normal SB3 behavior — not a bug, just something to know when reading the curves.
+
+  The resume + self-play flow looks correct. The first snapshot will be the pre-trained model, so opponents are competent from
+  step 1. Go ahead and kill the current run and start:
+
+  python examples/train_simultaneous.py --size 4 --self-play --warmup-steps 0 --resume models/size4/stage3/ppo_stage3_final.zip
+  --timesteps 5000000
