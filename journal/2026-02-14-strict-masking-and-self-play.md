@@ -275,3 +275,46 @@ python examples/train_simultaneous.py --size 4 --self-play --warmup-steps 0 \
 When changing reward structure mid-training, the **value network must recalibrate** before introducing additional instability (like self-play). The policy network transfers well because the action semantics haven't changed — "place piece at (2,1)" still means the same thing. But the value network's job is to predict *cumulative future reward*, and when the reward scale changes, every prediction is wrong. PPO's advantage estimates depend on accurate value predictions, so a miscalibrated value network corrupts the policy gradient even if the policy itself is good.
 
 The general rule: **one source of non-stationarity at a time.** Don't change reward structure AND add self-play simultaneously.
+
+---
+
+## Addendum 3: Sparse Rewards Don't Scale — Restoring Construction Shaping
+
+Phase B (from-scratch training with simplified rewards, no self-play) also failed to converge. After 720k steps:
+
+- Valid rate bouncing 12-56% with no upward trend
+- Win rate 0% with only occasional 5% blips
+- Explained variance stuck at 0.15-0.27
+
+For comparison, the old run (with construction shaping rewards) hit 95%+ valid rate by 200k steps and was winning games by 400k.
+
+The diagnosis: **sparse rewards don't scale to size 4**. With 0.0 reward for every construction step, the agent gets no learning signal during board building — the only feedback comes at round/game end, after 10+ sequential placement decisions on a 16-cell board. The construction shaping rewards (+0.1 piece, +0.3 row 0, +0.2 supermove, +0.1 trap) were critical breadcrumbs guiding the agent through the construction phase.
+
+This worked fine for sizes 2-3 in smoke tests because smaller boards have fewer decisions and the round-end signal is only a few steps away. Size 4's action space is large enough that the agent can't credit-assign back through 10+ construction steps to figure out which placements led to the win or loss.
+
+### What We Restored
+
+All original reward values:
+
+| Event | Simplified (failed) | Restored |
+|---|---|---|
+| Piece placement | 0.0 | +0.1 |
+| Reach row 0 | 0.0 | +0.3 |
+| Supermove landing | 0.0 | +0.2 |
+| Trap placement | 0.0 | +0.1 |
+| Round win | score_diff * 2 + 5 | score_diff * 5 + 10 |
+| Round loss | score_diff * 2 - 5 | score_diff * 5 - 5 |
+| Game win/loss | +/-25 | +/-50 |
+| Invalid board | -10 | -20 |
+
+The strict masking (BFS reachability) stays — that's purely beneficial regardless of reward structure. We now have the best of both: shaping rewards to guide construction learning + strict masking to guarantee validity.
+
+### Revised Plan
+
+The three-phase approach was over-engineered. Simpler plan:
+1. Train from scratch with original rewards + strict masking (no self-play) until convergence
+2. Add self-play with `--resume` once the model is solid
+
+### Lesson Learned
+
+Reward simplification is not universally beneficial. Dense shaping rewards are often dismissed as "noise" in RL literature, but they solve a real problem: **credit assignment over long action sequences**. The right time to simplify rewards is after the agent has learned the basics, not before. For size 4+, construction shaping is load-bearing infrastructure, not noise.

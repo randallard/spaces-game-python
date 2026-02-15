@@ -603,8 +603,12 @@ class SimultaneousPlayEnv(gym.Env):
                 if self.supermove_active:
                     self.supermove_active = False
                     self.supermove_position = None
+                    reward += 0.2  # Supermove landing
                 self.piece_visited_positions.add(f"{row},{col}")
                 self.current_piece_position = Position(row=row, col=col)
+                reward += 0.1  # Piece placement
+                if row == 0:
+                    reward += 0.3  # Reached row 0 (goal row)
 
             elif move_type == "trap":
                 self.trap_positions.add(f"{row},{col}")
@@ -613,6 +617,7 @@ class SimultaneousPlayEnv(gym.Env):
                         col == self.current_piece_position.col):
                     self.supermove_active = True
                     self.supermove_position = Position(row=row, col=col)
+                reward += 0.1  # Trap placement
 
             self.construction_step += 1
 
@@ -657,7 +662,7 @@ class SimultaneousPlayEnv(gym.Env):
 
         if not is_valid:
             # Invalid board fallback (shouldn't happen with strict masking)
-            reward += -10.0
+            reward += -20.0
             agent_round_score = 0
             opponent_round_score = 5  # Default win for opponent
         else:
@@ -672,9 +677,9 @@ class SimultaneousPlayEnv(gym.Env):
             opponent_round_score = result.opponentPoints
             score_diff = agent_round_score - opponent_round_score
 
-            reward += float(score_diff) * 2.0
+            reward += float(score_diff) * 5.0
             if agent_round_score > opponent_round_score:
-                reward += 5.0
+                reward += 10.0
             elif agent_round_score < opponent_round_score:
                 reward += -5.0
 
@@ -694,9 +699,9 @@ class SimultaneousPlayEnv(gym.Env):
         # Episode-end bonus
         if terminated:
             if self.agent_total_score > self.opponent_total_score:
-                reward += 25.0
+                reward += 50.0
             elif self.agent_total_score < self.opponent_total_score:
-                reward += -25.0
+                reward += -50.0
 
         # Reset construction state for next round (if not terminated)
         if not terminated:
