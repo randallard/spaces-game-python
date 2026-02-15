@@ -98,12 +98,12 @@ class SimultaneousPlayEnv(gym.Env):
         self._opponent_model = None
         self.use_self_play = False
 
-        # Action space: [cell, type, done]
-        self.action_space = spaces.MultiDiscrete([
-            board_size * board_size,  # cell
-            2,                         # type (0=piece, 1=trap)
-            2,                         # done (0=continue, 1=finish)
-        ])
+        # Action space: flat Discrete
+        # [0..n_cells-1] = piece at cell i
+        # [n_cells..2*n_cells-1] = trap at cell i
+        # [2*n_cells] = finish
+        n_cells = board_size * board_size
+        self.action_space = spaces.Discrete(2 * n_cells + 1)
 
         # Observation space
         board_shape = (board_size, board_size, 2)
@@ -114,7 +114,6 @@ class SimultaneousPlayEnv(gym.Env):
                 shape=board_shape, dtype=np.int32,
             ),
             "construction_step": spaces.Discrete(max_construction_steps + 1),
-            "valid_cells_mask": spaces.MultiBinary(board_size * board_size),
 
             # Game state (persists across rounds)
             "round": spaces.Discrete(self.ROUNDS_PER_GAME),
@@ -271,7 +270,7 @@ class SimultaneousPlayEnv(gym.Env):
 
         while queue:
             r, c = queue.popleft()
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            for dr, dc in [(-1, 0), (0, -1), (0, 1)]:  # forward-only (no backward)
                 nr, nc = r + dr, c + dc
                 if nr < 0 or nr >= size or nc < 0 or nc >= size:
                     continue
@@ -299,6 +298,10 @@ class SimultaneousPlayEnv(gym.Env):
             if self.current_piece_position is None:
                 return row == self.board_size - 1  # First piece: bottom row
 
+            # Forward-only: cannot move to a higher row index
+            if row > self.current_piece_position.row:
+                return False
+
             if f"{row},{col}" in self.piece_visited_positions:
                 return False  # No revisiting cells
 
@@ -325,6 +328,10 @@ class SimultaneousPlayEnv(gym.Env):
             if self.current_piece_position is None:
                 return False
 
+            # Forward-only: traps cannot be placed behind the piece
+            if row > self.current_piece_position.row:
+                return False
+
             if len(self.trap_positions) >= self.board_size - 1:
                 return False  # Trap limit: max board_size - 1 traps
 
@@ -340,7 +347,7 @@ class SimultaneousPlayEnv(gym.Env):
                 # Supermove trap: check that at least one adjacent escape cell
                 # exists AND from that escape cell all rows remain reachable
                 has_escape = False
-                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                for dr, dc in [(-1, 0), (0, -1), (0, 1)]:  # forward-only escapes
                     nr, nc = row + dr, col + dc
                     if nr < 0 or nr >= self.board_size or nc < 0 or nc >= self.board_size:
                         continue
@@ -370,65 +377,30 @@ class SimultaneousPlayEnv(gym.Env):
 
         return False
 
-    def _get_valid_cells_mask(self) -> np.ndarray:
-        """Get mask of valid cells (valid for either piece or trap)."""
-        mask = np.zeros(self.board_size * self.board_size, dtype=np.int8)
-        for row in range(self.board_size):
-            for col in range(self.board_size):
-                cell_idx = row * self.board_size + col
-                if (self._is_valid_placement(row, col, "piece") or
-                        self._is_valid_placement(row, col, "trap")):
-                    mask[cell_idx] = 1
-
-        if mask.sum() == 0:
-            mask[:] = 1  # Fallback to prevent MaskablePPO crash
-
-        return mask
-
     def action_masks(self) -> np.ndarray:
-        """Return action mask for MaskablePPO with MultiDiscrete action space."""
+        """Return flat action mask for MaskablePPO with Discrete action space.
+
+        Layout: [piece_cell_0..piece_cell_n-1, trap_cell_0..trap_cell_n-1, finish]
+        """
         n_cells = self.board_size * self.board_size
+        mask = np.zeros(2 * n_cells + 1, dtype=np.int8)
 
-        # Check for deadlock
-        has_valid_piece = any(
-            self._is_valid_placement(r, c, "piece")
-            for r in range(self.board_size)
-            for c in range(self.board_size)
-        )
-        has_valid_trap = (
-            not self.supermove_active and
-            self.current_piece_position is not None and
-            any(
-                self._is_valid_placement(r, c, "trap")
-                for r in range(self.board_size)
-                for c in range(self.board_size)
-            )
-        )
+        has_any_valid = False
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                idx = r * self.board_size + c
+                if self._is_valid_placement(r, c, "piece"):
+                    mask[idx] = 1
+                    has_any_valid = True
+                if self._is_valid_placement(r, c, "trap"):
+                    mask[n_cells + idx] = 1
+                    has_any_valid = True
 
-        if not has_valid_piece and not has_valid_trap:
-            # Deadlock - force finish
-            cell_mask = np.ones(n_cells, dtype=np.int8)
-            type_mask = np.ones(2, dtype=np.int8)
-            done_mask = np.array([0, 1], dtype=np.int8)
-            return np.concatenate([cell_mask, type_mask, done_mask])
-
-        # Cell mask
-        cell_mask = self._get_valid_cells_mask()
-
-        # Type mask [piece, trap]
-        type_mask = np.zeros(2, dtype=np.int8)
-        if self.supermove_active or self.current_piece_position is None:
-            type_mask[0] = 1  # must place piece
-        else:
-            type_mask[0] = 1 if has_valid_piece else 0
-            type_mask[1] = 1 if has_valid_trap else 0
-
-        # Done mask [continue, finish]
-        # Must be at row 0, not in supermove, AND have visited all rows
+        # Finish action
         visited_rows = set()
         for pos_key in self.piece_visited_positions:
-            r, _ = pos_key.split(",")
-            visited_rows.add(int(r))
+            row_str, _ = pos_key.split(",")
+            visited_rows.add(int(row_str))
         all_rows_visited = visited_rows >= set(range(self.board_size))
         can_finish = (
             self.current_piece_position is not None
@@ -436,9 +408,15 @@ class SimultaneousPlayEnv(gym.Env):
             and not self.supermove_active
             and all_rows_visited
         )
-        done_mask = np.array([1, 1 if can_finish else 0], dtype=np.int8)
 
-        return np.concatenate([cell_mask, type_mask, done_mask])
+        if can_finish:
+            mask[2 * n_cells] = 1
+
+        # Deadlock: force finish if no valid placements
+        if not has_any_valid:
+            mask[2 * n_cells] = 1
+
+        return mask
 
     def _get_last_move_column(self) -> int:
         """Get the column of the last non-final move."""
@@ -512,7 +490,6 @@ class SimultaneousPlayEnv(gym.Env):
         return {
             "building_board": self.building_grid.copy(),
             "construction_step": min(self.construction_step, self.max_construction_steps),
-            "valid_cells_mask": self._get_valid_cells_mask(),
             "round": min(self.current_round, self.ROUNDS_PER_GAME - 1),
             "score_diff": np.array(
                 [self.agent_total_score - self.opponent_total_score],
@@ -560,7 +537,7 @@ class SimultaneousPlayEnv(gym.Env):
         return obs, info
 
     def step(
-        self, action: np.ndarray,
+        self, action,
     ) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
         """Execute one construction step or round transition."""
         self.steps_taken += 1
@@ -569,19 +546,20 @@ class SimultaneousPlayEnv(gym.Env):
         if self.steps_taken >= self.max_construction_steps:
             return self._finish_round(forced_invalid=True)
 
-        cell = int(action[0]) % (self.board_size * self.board_size)
-        piece_or_trap = int(action[1]) % 2
-        done_flag = int(action[2]) > 0
+        action = int(action)
+        n_cells = self.board_size * self.board_size
 
+        # Finish action
+        if action >= 2 * n_cells:
+            return self._finish_round()
+
+        # Decode cell and type
+        cell = action % n_cells
+        move_type = "piece" if action < n_cells else "trap"
         row = cell // self.board_size
         col = cell % self.board_size
-        move_type = "piece" if piece_or_trap == 0 else "trap"
 
         reward = 0.0
-
-        # Agent signals done - finish this round
-        if done_flag:
-            return self._finish_round()
 
         # Try to place a move
         order = self.construction_step + 1
@@ -629,8 +607,7 @@ class SimultaneousPlayEnv(gym.Env):
             return obs, reward, False, False, info
 
         else:
-            # Can occur with MultiDiscrete masking (cell valid for one type
-            # but agent chose the other). No penalty - just skip the step.
+            # Should not occur with flat masking, but handle gracefully.
             obs = self._get_observation()
             info = {
                 "round": self.current_round,
@@ -791,16 +768,16 @@ class SimultaneousPlayEnv(gym.Env):
                 obs, deterministic=False, action_masks=masks,
             )
 
-            # Check done flag
-            if int(action[2]) > 0:
-                break
+            # Decode flat action
+            act = int(action)
+            opp_n_cells = self.board_size * self.board_size
+            if act >= 2 * opp_n_cells:
+                break  # finish
 
-            # Apply construction step manually
-            cell = int(action[0]) % (self.board_size * self.board_size)
-            piece_or_trap = int(action[1]) % 2
+            cell = act % opp_n_cells
+            move_type = "piece" if act < opp_n_cells else "trap"
             row = cell // self.board_size
             col = cell % self.board_size
-            move_type = "piece" if piece_or_trap == 0 else "trap"
             order = opp_env.construction_step + 1
 
             if opp_env._is_valid_placement(row, col, move_type):

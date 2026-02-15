@@ -318,3 +318,70 @@ The three-phase approach was over-engineered. Simpler plan:
 ### Lesson Learned
 
 Reward simplification is not universally beneficial. Dense shaping rewards are often dismissed as "noise" in RL literature, but they solve a real problem: **credit assignment over long action sequences**. The right time to simplify rewards is after the agent has learned the basics, not before. For size 4+, construction shaping is load-bearing infrastructure, not noise.
+
+---
+
+## Addendum 4: Flat Discrete Action Space + Forward-Only Movement
+
+After restoring shaping rewards, size 4 training still bounced between 12-56% valid rate after 720k steps. The root cause wasn't the rewards — it was the **MultiDiscrete action space** and **backward movement**.
+
+### Problem: MultiDiscrete Cell/Type Mismatch
+
+The MultiDiscrete space `[cell, type, done]` masks each dimension independently. MaskablePPO learns separate distributions for each dimension, but the valid combinations aren't independent. A cell might be valid for piece placement but not for trap placement (or vice versa). The cell mask is the union of both, and the type mask tells you which types exist — but there's no way to express "cell 5 is valid for piece but not trap."
+
+Result: the agent picks a valid cell AND a valid type, but the *combination* is invalid. This is a no-op that wastes its step budget. On a 16-cell board, the majority of random actions are wasted, leading to truncation before the agent completes a board. Even a partially trained agent wastes 30-50% of its steps on mismatched cell/type combinations.
+
+### Problem: Backward Movement
+
+The agent could move the piece backward (to higher row indices), allowing oscillation. While the no-revisit rule prevents infinite loops, the agent still wasted steps zigzagging up and down the board. On a 4x4 grid, this doubles the effective path length and makes construction harder than it needs to be.
+
+### Fix 1: Flat Discrete Action Space
+
+Replaced `MultiDiscrete([n_cells, 2, 2])` with `Discrete(2 * n_cells + 1)`:
+
+```
+Action 0..n_cells-1:      piece at cell i
+Action n_cells..2*n_cells-1: trap at cell i
+Action 2*n_cells:          finish
+Total: 2 * board_size² + 1 (size 4 = 33 actions)
+```
+
+Every unmasked action is now guaranteed valid. No more cell/type mismatch — if action 5 (piece at cell 5) is unmasked, placing a piece at cell 5 is valid. If action 21 (trap at cell 5) is unmasked, placing a trap at cell 5 is valid. Zero wasted steps.
+
+Removed `valid_cells_mask` from the observation space (it was a helper for MultiDiscrete masking, now redundant). Removed `_get_valid_cells_mask()` helper method.
+
+### Fix 2: Forward-Only Movement
+
+Added constraints to `_is_valid_placement()`:
+- **Piece**: `if row > self.current_piece_position.row: return False`
+- **Trap**: `if row > self.current_piece_position.row: return False`
+- **BFS**: Removed backward direction `(1, 0)` from `_can_reach_all_rows()` — only `[(-1, 0), (0, -1), (0, 1)]`
+- **Supermove escapes**: Same forward-only constraint on escape directions
+
+The piece can only move forward (lower row index) or sideways (same row). This eliminates oscillation and cuts the effective search space roughly in half for size 4.
+
+### Files Changed
+
+- **`spaces_game/simultaneous_play_env.py`**: Action space, action_masks(), step(), _build_opponent_board_from_model(), _is_valid_placement(), _can_reach_all_rows(), observation space
+- **`inference_server/inference.py`**: Action decoding in build_board_for_round()
+- **`examples/play_against_agent.py`**: Action decoding in _agent_build_board_blind()
+- **`tests/test_strict_masking.py`**: Rewritten for flat mask format, added TestFlatActionSpace and TestForwardOnlyMovement classes
+
+### Test Results
+
+All 167 tests pass, including 26 strict masking tests (sizes 2, 3, 4 end-to-end random play). The key invariant holds: when the agent signals finish through the flat mask, the board is always valid.
+
+### Today's Retry Summary
+
+This was the **fourth major iteration** on size 4 training in a single day:
+
+1. **Strict masking + simplified rewards + self-play from scratch** → self-play collapsed (warmup too short, 14% valid snapshot → death spiral)
+2. **Resume pre-trained model with self-play** → value network mismatch collapse (old rewards calibrated to +50 game win, new rewards use +25)
+3. **Restored original shaping rewards, no self-play** → valid rate stuck at 12-56% (MultiDiscrete cell/type mismatch wasting steps)
+4. **Flat Discrete action space + forward-only movement** → eliminates wasted steps entirely, every action is guaranteed valid (this addendum)
+
+Each attempt revealed a different bottleneck. The progression: self-play instability → reward mismatch → sparse reward failure → action space inefficiency. Each fix was load-bearing — we kept strict masking and original rewards while addressing the remaining structural issues.
+
+### What's Next
+
+Retrain size 4 from scratch with the flat action space + forward-only movement + original shaping rewards + strict masking. Previous models are incompatible (different action/observation spaces). Expect much faster convergence since zero steps are wasted on invalid actions.

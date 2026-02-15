@@ -379,16 +379,16 @@ def _agent_build_board_blind(
             else:
                 action, _ = model.predict(obs, deterministic=deterministic)
 
-            # Check done flag before calling step (avoid _finish_round)
-            if int(action[2]) > 0:
-                break
+            # Decode flat action
+            act = int(action)
+            n_cells = board_size * board_size
+            if act >= 2 * n_cells:
+                break  # finish
 
-            # Apply construction step manually
-            cell = int(action[0]) % (board_size * board_size)
-            piece_or_trap = int(action[1]) % 2
+            cell = act % n_cells
+            move_type = "piece" if act < n_cells else "trap"
             row = cell // board_size
             col = cell % board_size
-            move_type = "piece" if piece_or_trap == 0 else "trap"
             order = env.construction_step + 1
 
             if env._is_valid_placement(row, col, move_type):
