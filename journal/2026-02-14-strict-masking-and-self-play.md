@@ -385,3 +385,57 @@ Each attempt revealed a different bottleneck. The progression: self-play instabi
 ### What's Next
 
 Retrain size 4 from scratch with the flat action space + forward-only movement + original shaping rewards + strict masking. Previous models are incompatible (different action/observation spaces). Expect much faster convergence since zero steps are wasted on invalid actions.
+
+---
+
+## Addendum 5: Size 4 Solved — 100% Valid, 100% Win Rate
+
+The retraining with the flat Discrete action space succeeded decisively. Results at 1.57M steps:
+
+| Metric | Value | Notes |
+|---|---|---|
+| Valid rate | **100%** | Every single board valid across all 1.57M steps |
+| Win rate | **100%** | At phase 6 (all pool types mixed) |
+| Explained variance | 0.35-0.46 | Value network learning well |
+| Opponent phase | 6/6 | Final phase reached at step 1.2M |
+
+### Phase Progression
+
+| Phase | Step Reached | Description |
+|---|---|---|
+| 0 | 8,000 | Simple boards |
+| 1 | 584,000 | One-trap boards |
+| 2 | 696,000 | Simple + one-trap mixed |
+| 3 | 840,000 | Supermove boards |
+| 4 | 888,000 | Simple + one-trap + supermove |
+| 5 | 1,160,000 | Supermove-counter boards |
+| 6 | 1,200,000 | All 4 pool types mixed |
+
+For comparison, the previous best size 4 run (MultiDiscrete action space) hit phase 6 but bounced between 12-56% valid rate after 720k steps. The flat action space run hit 100% valid rate *immediately* and never dropped.
+
+### Why It Worked
+
+The flat Discrete action space was the missing piece. The four attempts today each peeled back a layer:
+
+1. **Self-play from scratch** → revealed warmup requirements
+2. **Resume + self-play** → revealed reward mismatch problem
+3. **Restored rewards, no self-play** → revealed MultiDiscrete action space wasting 30-50% of steps
+4. **Flat Discrete + forward-only** → 100% valid, 100% win rate at phase 6
+
+The key insight: with MultiDiscrete, the agent could select a valid cell AND a valid type but have them be incompatible (cell valid for piece, agent picks trap). Every such mismatch was a wasted step. On a 16-cell board requiring 8-12 construction steps, losing half your steps to mismatches means frequent truncation before board completion. The flat space makes this structurally impossible — every unmasked action is guaranteed valid.
+
+Forward-only movement further reduced the effective search space by roughly half, preventing backward oscillation.
+
+### What's Next
+
+The pool opponents are exhausted — 100% win rate means there's nothing left to learn from them. Self-play is the natural next step:
+
+```bash
+python examples/train_simultaneous.py --size 4 --self-play --warmup-steps 0 \
+    --resume models/size4/stage3/best/best_model.zip --timesteps 5000000
+```
+
+This time the conditions are right:
+- Stable base policy (100% valid, 100% win vs pools)
+- Same reward structure (no value network mismatch)
+- Single source of non-stationarity (self-play opponents only)
