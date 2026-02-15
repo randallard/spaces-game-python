@@ -1,3 +1,47 @@
+❯ nice!  seems like we've got it figured - how much more is left for this training to accomplish?  Help me re-word that
+  question in industry standard terms, as well
+
+● The current run is at ~1.58M of 5M timesteps, so about 68% remaining (~3.4M steps left).
+
+  But I think you're asking a deeper question — not just "when does this script finish" but "what's left to achieve." Let me
+  check what the curriculum looks like.
+
+● Bash(python3 -c "
+      from tensorboard.backend.event_processing.event_accumulator import EventAccumulator…)
+  ⎿  Total eval points: 200
+     First step: 8,000, Last step: 1,600,000
+     Steps      8,000-   320,000: avg win rate 0.42
+     … +13 lines (ctrl+o to expand)
+
+● The agent reached phase 6 (all pool types) at 1.47M steps and is now averaging 67% win rate there. The remaining 3.4M steps are
+   for the agent to converge at phase 6 — ideally pushing win rate toward 90-100% consistently while self-play opponents keep
+  getting stronger.
+
+  ---
+  As for your question in industry-standard RL terms, you're asking:
+
+  "Has the policy converged, or is there still room for improvement in the reward signal?"
+
+  Or more specifically:
+
+  "What's the sample efficiency looking like — are we still seeing marginal gains, or has the agent plateaued?"
+
+  Other common ways to frame it:
+  - "Has the agent reached asymptotic performance?" — is the win rate still climbing or has it leveled off?
+  - "What's the convergence status?" — are the metrics (reward, win rate, explained variance) stabilizing?
+  - "How much more training budget do we need?" — should we let the full 5M run, or early-stop?
+
+  Right now the answer is: not yet converged. The jump from 39% to 67% average win rate in the last quintile suggests the agent
+  is still actively improving. Worth letting the full 5M run.
+
+
+
+
+
+
+From a failed run:
+
+
 ● Here's what I see:
 
   Current run status:

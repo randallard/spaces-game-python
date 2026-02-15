@@ -178,16 +178,18 @@ See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, an
 - **Stage 2 - Reverse Curriculum**: Obsolete (replaced by construction scaffolding in Stage 3)
 - **Stage 3 - Simultaneous 5-Round Play**: Blind board construction + opponent adaptation
   - Size 2 + 3: Complete (Feb 12, 2026). All opponent phases cleared.
-  - Size 4: Self-play training in progress (Feb 14, 2026).
-  - Feb 14 rework: strict action masking (invalid boards impossible), scaffolding removed, rewards simplified, self-play added.
+  - Size 4: Complete (Feb 15, 2026). 100% valid rate, ~78% win rate with self-play opponent mixing.
+  - Feb 14 rework: strict action masking (invalid boards impossible), flat Discrete action space, forward-only movement, self-play added.
+  - Feb 15: Added `--self-play-ratio` for pool opponent mixing during self-play, preventing specialization collapse.
 
-### Current: Size 4 Self-Play Training
+### Current Status: Size 4 Complete
 
-Strict masking + self-play replaces the old scaffolding + random opponent approach. The agent plays against frozen copies of itself, learning from opponents that have actual patterns to exploit.
+Size 4 solved with self-play + pool opponent mixing (`--self-play-ratio 0.5`). The agent maintains ~78% win rate against pool opponents while training against frozen copies of itself. All 5 difficulty tiers saved (beginner through advanced_plus).
 
 ```bash
-# Size 4 with self-play
-python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
+# Size 4 with self-play and pool mixing
+python examples/train_simultaneous.py --size 4 --self-play --self-play-ratio 0.5 \
+    --warmup-steps 0 --resume models/size4/stage3/best/best_model.zip --timesteps 5000000
 ```
 
 ### Next: Stage 4 (Fog of War)

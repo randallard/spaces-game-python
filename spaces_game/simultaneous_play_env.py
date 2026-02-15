@@ -97,6 +97,7 @@ class SimultaneousPlayEnv(gym.Env):
         # Self-play support
         self._opponent_model = None
         self.use_self_play = False
+        self.self_play_ratio = 0.5
 
         # Action space: flat Discrete
         # [0..n_cells-1] = piece at cell i
@@ -632,7 +633,12 @@ class SimultaneousPlayEnv(gym.Env):
 
         # Select opponent's board (self-play or JSON pool)
         opponent_board = None
-        if self.use_self_play and self._opponent_model is not None:
+        use_model = (
+            self.use_self_play
+            and self._opponent_model is not None
+            and np.random.random() < self.self_play_ratio
+        )
+        if use_model:
             opponent_board = self._build_opponent_board_from_model()
         if opponent_board is None:
             opponent_board = self._select_opponent_board()
@@ -720,6 +726,10 @@ class SimultaneousPlayEnv(gym.Env):
         from sb3_contrib import MaskablePPO
         self._opponent_model = MaskablePPO.load(model_path)
         self.use_self_play = True
+
+    def set_self_play_ratio(self, ratio: float) -> None:
+        """Set fraction of rounds using self-play opponent. Callable via SubprocVecEnv.env_method()."""
+        self.self_play_ratio = ratio
 
     def clear_opponent_model(self) -> None:
         """Revert to JSON pool opponents."""

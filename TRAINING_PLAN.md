@@ -19,7 +19,7 @@ Stage 1: Perfect Counter-Play (Board Construction)      ✅ COMPLETE
    ↓
 Stage 2: Reverse Curriculum Construction                 ⚠️  OBSOLETE (replaced by Stage 3 scaffolding)
    ↓
-Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 DONE, SIZE 4 IN PROGRESS (self-play)
+Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 + SIZE 4 DONE
    ↓
 Stage 4: 5-Round Play with Fog of War                   ⏳ NEXT UP
    ↓
@@ -308,6 +308,7 @@ With the trap limit rule (`max_traps = board_size - 1`), Stage 2 can no longer a
 **Status**:
 - ✅ **Size 2**: Complete. All opponent phases, 40-65% win rate. Model: `models/size2/stage3/best/best_model.zip`
 - ✅ **Size 3**: Complete. All construction + opponent phases, 65-100% win rate (avg ~75%). Model: `models/size3/stage3/best/best_model.zip`
+- ✅ **Size 4**: Complete. All opponent phases, ~78% win rate with self-play mixing (0.5 ratio). 100% valid rate. Model: `models/size4/stage3/best/best_model.zip`. 5 difficulty tiers in `models/size4/stage3/difficulty/`
 
 ### What Agent Learns:
 - Build competitive boards without seeing opponent's current board
@@ -515,16 +516,20 @@ script or environment needed.
 1. **Warmup** (default 100k steps): JSON pool opponents, agent learns basic construction
 2. **Snapshot** (every 50k steps): Freeze current model, add to rolling pool of 10 snapshots
 3. **Opponent assignment**: Each training env gets a random snapshot as its opponent
-4. **Fallback**: If opponent model produces an invalid board, falls back to JSON pool (~20% mixing prevents collapse)
+4. **Pool mixing** (`--self-play-ratio`, default 0.5): Each round flips a coin — use self-play model or pool opponent. Prevents specialization collapse where the agent forgets how to beat pool opponents.
+5. **Fallback**: If opponent model produces an invalid board, falls back to JSON pool
 
 ### Training Command:
 ```bash
-python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
+# Recommended: train against pool first, then resume with self-play
+python examples/train_simultaneous.py --size 4 --timesteps 2000000
+python examples/train_simultaneous.py --size 4 --self-play --self-play-ratio 0.5 \
+    --warmup-steps 0 --resume models/size4/stage3/best/best_model.zip --timesteps 5000000
 
 # With custom self-play parameters:
 python examples/train_simultaneous.py --size 4 --self-play \
     --snapshot-freq 50000 --pool-size 10 --warmup-steps 100000 \
-    --timesteps 10000000
+    --self-play-ratio 0.5 --timesteps 10000000
 ```
 
 ### Skill Level Snapshots:
@@ -647,17 +652,13 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 
 ### What's Next:
 
-**Immediate**:
+**Completed**:
 - ✅ Size 2 + 3 retrained with all fixes (Feb 12) — all phases cleared
-- ✅ Strict masking + self-play rework (Feb 14) — scaffolding removed, rewards simplified
-- Size 4 self-play from scratch collapsed (warmup too short → policy collapse)
-- Resumed self-play also collapsed (reward mismatch → negative explained variance)
-- Sparse rewards failed for size 4 (no convergence at 720k steps) — restored construction shaping
-- Now training from scratch: strict masking + original rewards (best of both)
-- Self-play next, once base model converges
+- ✅ Strict masking + self-play rework (Feb 14) — scaffolding removed, flat action space, forward-only movement
+- ✅ Size 4 pool training solved (Feb 14) — 100% valid, 100% win at phase 6
+- ✅ Size 4 self-play with pool mixing (Feb 15) — asymptotic at ~78% win rate, all 5 difficulty tiers saved
 
 **Short-term**:
-- Evaluate size 4 resumed self-play results — does win rate break past 50%?
 - Deploy size 4 model to inference server
 - Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
 
@@ -698,4 +699,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Size 2 + 3 complete (Feb 12). Size 4 self-play training in progress (Feb 14).** Stage 3 reworked: strict action masking (BFS reachability) makes invalid boards impossible, construction scaffolding removed, rewards simplified, self-play with rolling opponent pool added. Simplified rewards failed for size 4 (sparse signal, no convergence). Restored original construction shaping rewards + strict masking. Training from scratch with pool opponents, self-play planned after convergence.
+Current Status: **Size 2 + 3 + 4 complete (Feb 15).** Stage 3 fully solved for sizes 2-4. Size 4 uses strict action masking (BFS reachability), flat Discrete action space, forward-only movement, original shaping rewards, and self-play with pool opponent mixing (`--self-play-ratio 0.5`). Asymptotic at ~78% win rate against pool opponents. All 5 difficulty tiers saved. Next: Stage 4 (fog of war).

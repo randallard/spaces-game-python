@@ -356,6 +356,7 @@ class SelfPlayCallback(BaseCallback):
         warmup_steps: int = 100_000,
         n_envs: int = 4,
         phase_callback: Optional['OpponentProgressionCallback'] = None,
+        self_play_ratio: float = 0.5,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -365,6 +366,7 @@ class SelfPlayCallback(BaseCallback):
         self.warmup_steps = warmup_steps
         self.n_envs = n_envs
         self.phase_callback = phase_callback
+        self.self_play_ratio = self_play_ratio
         self.snapshot_paths: List[str] = []
         self._warmup_complete = False
         self._last_snapshot_step = 0
@@ -429,6 +431,9 @@ class SelfPlayCallback(BaseCallback):
             try:
                 self.training_env.env_method(
                     "set_opponent_model", path, indices=[i],
+                )
+                self.training_env.env_method(
+                    "set_self_play_ratio", self.self_play_ratio, indices=[i],
                 )
             except Exception as e:
                 if self.verbose >= 1:
@@ -533,6 +538,7 @@ def train(
     snapshot_freq: int = 50_000,
     pool_size: int = 10,
     warmup_steps: int = 100_000,
+    self_play_ratio: float = 0.5,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -696,6 +702,7 @@ def train(
             warmup_steps=warmup_steps,
             n_envs=n_envs,
             phase_callback=phase_callback,
+            self_play_ratio=self_play_ratio,
             verbose=1,
         )
         callbacks.append(self_play_callback)
@@ -805,6 +812,10 @@ if __name__ == "__main__":
         "--warmup-steps", type=int, default=100_000,
         help="Steps before self-play activates (default: 100,000)",
     )
+    parser.add_argument(
+        "--self-play-ratio", type=float, default=0.5,
+        help="Fraction of rounds using self-play opponent vs pool (default: 0.5)",
+    )
 
     args = parser.parse_args()
 
@@ -832,4 +843,5 @@ if __name__ == "__main__":
         snapshot_freq=args.snapshot_freq,
         pool_size=args.pool_size,
         warmup_steps=args.warmup_steps,
+        self_play_ratio=args.self_play_ratio,
     )
