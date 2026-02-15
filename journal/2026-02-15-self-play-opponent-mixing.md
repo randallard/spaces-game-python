@@ -167,6 +167,7 @@ Watching TensorBoard plateau can feel like failure, but asymptotic performance m
 
 ## What's Next
 
+- **Retrain size 2 + 3**: Current deployed models use the old MultiDiscrete action space. Retrain with flat Discrete + self-play mixing to match size 4 quality. See [RETRAIN_SIZE2_SIZE3.md](../RETRAIN_SIZE2_SIZE3.md).
 - **Stage 4 (fog of war)**: The agent currently sees the opponent's full board after each round. Under fog, it only sees moves up to the opponent's last executed step. This changes the meta-game significantly — the agent must infer opponent strategy from partial information.
 - **Size 5**: Larger board, harder credit assignment. Will need the same strict masking + flat action space + forward-only movement architecture.
 - **Inference server deployment**: The 5 difficulty tiers are ready for the web app.
