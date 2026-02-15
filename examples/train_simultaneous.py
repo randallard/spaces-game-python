@@ -539,6 +539,7 @@ def train(
     pool_size: int = 10,
     warmup_steps: int = 100_000,
     self_play_ratio: float = 0.5,
+    win_rate_threshold: float = 0.70,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -633,7 +634,7 @@ def train(
     phase_callback = OpponentProgressionCallback(
         eval_freq=eval_freq,
         eval_episodes=20,
-        win_rate_threshold=0.70,
+        win_rate_threshold=win_rate_threshold,
         valid_rate_threshold=0.90,
         min_steps_per_phase=min_phase_steps,
         max_phase=max_phase,
@@ -816,6 +817,10 @@ if __name__ == "__main__":
         "--self-play-ratio", type=float, default=0.5,
         help="Fraction of rounds using self-play opponent vs pool (default: 0.5)",
     )
+    parser.add_argument(
+        "--win-rate-threshold", type=float, default=0.70,
+        help="Win rate required to advance curriculum phase (default: 0.70, try 0.55 for size 2)",
+    )
 
     args = parser.parse_args()
 
@@ -844,4 +849,5 @@ if __name__ == "__main__":
         pool_size=args.pool_size,
         warmup_steps=args.warmup_steps,
         self_play_ratio=args.self_play_ratio,
+        win_rate_threshold=args.win_rate_threshold,
     )
