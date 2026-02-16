@@ -174,4 +174,54 @@ Watching TensorBoard plateau can feel like failure, but asymptotic performance m
 
 ---
 
+## Size 2 Retraining
+
+With size 4 deployed, we turned back to retrain sizes 2 and 3 with the current architecture (flat Discrete + strict masking + self-play mixing).
+
+### Phase 1: Pool Opponents
+
+```bash
+python examples/train_simultaneous.py --size 2 --timesteps 500000
+```
+
+Blazing fast. All 7 phases cleared by step 98k — 100% valid rate the entire time. Win rate at phase 6 settling around 60-85%. The flat action space makes size 2 trivial.
+
+### Phase 2: Self-Play — The Win Rate Threshold Problem
+
+First attempt with self-play and the default 70% win rate threshold:
+
+```bash
+python examples/train_simultaneous.py --size 2 --self-play --self-play-ratio 0.5 \
+    --warmup-steps 0 --resume models/size2/stage3/best/best_model.zip --timesteps 1000000
+```
+
+Win rate collapsed from 100% to 0% at step 48k when the curriculum advanced to phase 1, then bounced 0-50% for 300k steps. The 70% threshold was unreachable — even the pool-only run averaged only 60% at phase 6 with a range of 35-85%.
+
+The fundamental issue: **size 2 boards are high-variance**. With 4 cells, outcomes are close to a coin flip. There isn't enough strategic depth to consistently beat opponents 70% of the time. The threshold that works for sizes 3-4 is wrong for size 2.
+
+### The Fix: `--win-rate-threshold`
+
+Added a CLI flag to control the curriculum advancement threshold:
+
+```bash
+python examples/train_simultaneous.py --size 2 --self-play --self-play-ratio 0.5 \
+    --warmup-steps 0 --resume models/size2/stage3/best/best_model.zip \
+    --win-rate-threshold 0.55 --timesteps 1000000
+```
+
+With 0.55 threshold: phase 6 reached by 288k steps. Win rate settled into a 25-70% band averaging ~50% — the theoretical equilibrium for size 2 with self-play mixing. The agent is as good as its opponent (itself), and the board is too small for consistent strategic advantage.
+
+All 5 difficulty tiers saved. Models copied and committed for deployment.
+
+---
+
+## What's Next
+
+- **Retrain size 3**: Same two-phase approach (pool then self-play). See [RETRAIN_SIZE2_SIZE3.md](../RETRAIN_SIZE2_SIZE3.md).
+- **Stage 4 (fog of war)**: The agent currently sees the opponent's full board after each round. Under fog, it only sees moves up to the opponent's last executed step. This changes the meta-game significantly — the agent must infer opponent strategy from partial information.
+- **Size 5**: Larger board, harder credit assignment. Will need the same strict masking + flat action space + forward-only movement architecture.
+- **Inference server deployment**: Size 4 difficulty tiers ready; size 2 updated; size 3 pending retraining.
+
+---
+
 *The agent that trains only against itself forgets there's a world outside. Mix in reality, and it stays sharp.*

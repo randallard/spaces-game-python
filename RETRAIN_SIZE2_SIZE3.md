@@ -17,33 +17,27 @@ Retraining brings sizes 2 and 3 up to the same standard as size 4: flat action s
 
 ## Training Steps
 
-### Size 2
+### Size 2 — COMPLETE
 
 Size 2 is small (4 cells, `Discrete(9)` action space). Convergence is fast.
 
-**Phase 1: Pool opponents**
+**Phase 1: Pool opponents** ✅
 ```bash
 python examples/train_simultaneous.py --size 2 --timesteps 500000
 ```
-- Expected: 100% valid rate, all opponent phases cleared within 200k steps
-- Monitor: `tensorboard --logdir logs/size2_stage3/`
-- Wait for phase 4 (all pools) with ≥70% win rate
+- All 7 phases cleared by 98k steps. 100% valid rate throughout.
 
-**Phase 2: Self-play with pool mixing**
+**Phase 2: Self-play with pool mixing** ✅
 ```bash
 python examples/train_simultaneous.py --size 2 --self-play --self-play-ratio 0.5 \
-    --warmup-steps 0 --resume models/size2/stage3/best/best_model.zip --timesteps 1000000
+    --warmup-steps 0 --resume models/size2/stage3/best/best_model.zip \
+    --win-rate-threshold 0.55 --timesteps 1000000
 ```
-- Expected: asymptotic within 500k steps
-- Check TensorBoard for plateau (flat win rate band, stable explained variance)
-- Early-stop if asymptotic before 1M
+- **Note**: Size 2 requires `--win-rate-threshold 0.55` (default 0.70 is unreachable due to high variance on 4-cell boards).
+- Phase 6 reached by 288k steps. Asymptotic at ~50% win rate (theoretical equilibrium for size 2).
+- All 5 difficulty tiers saved. Early-stopped at 624k steps.
 
-**Deploy: Copy difficulty tiers**
-```bash
-cp models/size2/stage3/difficulty/beginner.zip models/size2/stage3/beginner.zip
-cp models/size2/stage3/difficulty/intermediate.zip models/size2/stage3/intermediate.zip
-cp models/size2/stage3/difficulty/expert.zip models/size2/stage3/expert.zip
-```
+**Deploy** ✅ — Models copied and committed.
 
 ### Size 3
 
