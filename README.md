@@ -169,7 +169,7 @@ npm run cli -- generate-boards --size 3 --limit 500 --output ../spaces-game-pyth
 
 ## Training Progress
 
-See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, and training commands. Size 2 + 3 retraining plan: [RETRAIN_SIZE2_SIZE3.md](RETRAIN_SIZE2_SIZE3.md).
+See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, and training commands. See [EXPERIMENTS.md](EXPERIMENTS.md) for fog of war experiments and LLM vs RL comparisons.
 
 ### Completed Stages
 
