@@ -215,12 +215,44 @@ All 5 difficulty tiers saved. Models copied and committed for deployment.
 
 ---
 
+## Size 3 Retraining
+
+### Phase 1: Pool Opponents
+
+```bash
+python examples/train_simultaneous.py --size 3 --timesteps 2000000
+```
+
+All 7 phases cleared by 256k steps — 7x faster than the old MultiDiscrete run (1.84M steps). 100% valid rate, 70-95% win rate at phase 6. Early-stopped with most of the 2M budget unused.
+
+### Phase 2: Self-Play
+
+```bash
+python examples/train_simultaneous.py --size 3 --self-play --self-play-ratio 0.5 \
+    --warmup-steps 0 --resume models/size3/stage3/best/best_model.zip --timesteps 2000000
+```
+
+Phase 6 reached by 248k steps. Win rate started around 80% and gradually settled as the self-play opponents strengthened. By 1.2M steps it was clearly asymptotic — bouncing in a 50-80% band averaging 65%. Same pattern as size 4 (100% pool-only → ~65-78% with self-play mixing).
+
+All 5 difficulty tiers saved. Models copied and committed for deployment.
+
+### Size Comparison
+
+| Size | Cells | Pool Phases Cleared | Self-Play Equilibrium | Threshold Needed |
+|---|---|---|---|---|
+| 2 | 4 | 98k steps | ~50% win rate | 0.55 (too noisy for 0.70) |
+| 3 | 9 | 256k steps | ~65% win rate | 0.70 (default) |
+| 4 | 16 | 1.57M steps | ~78% win rate | 0.70 (default) |
+
+Larger boards = more strategic depth = higher equilibrium win rate against pools. Makes sense — more cells means more room for the agent to outplay the opponent rather than relying on coin-flip outcomes.
+
+---
+
 ## What's Next
 
-- **Retrain size 3**: Same two-phase approach (pool then self-play). See [RETRAIN_SIZE2_SIZE3.md](../RETRAIN_SIZE2_SIZE3.md).
 - **Stage 4 (fog of war)**: The agent currently sees the opponent's full board after each round. Under fog, it only sees moves up to the opponent's last executed step. This changes the meta-game significantly — the agent must infer opponent strategy from partial information.
 - **Size 5**: Larger board, harder credit assignment. Will need the same strict masking + flat action space + forward-only movement architecture.
-- **Inference server deployment**: Size 4 difficulty tiers ready; size 2 updated; size 3 pending retraining.
+- **Inference server deployment**: All sizes (2, 3, 4) retrained and committed. Push to trigger Railway deployment.
 
 ---
 

@@ -39,31 +39,27 @@ python examples/train_simultaneous.py --size 2 --self-play --self-play-ratio 0.5
 
 **Deploy** ✅ — Models copied and committed.
 
-### Size 3
+### Size 3 — COMPLETE
 
 Size 3 is moderate (9 cells, `Discrete(19)` action space).
 
-**Phase 1: Pool opponents**
+**Phase 1: Pool opponents** ✅
 ```bash
 python examples/train_simultaneous.py --size 3 --timesteps 2000000
 ```
-- Expected: 100% valid rate, all opponent phases cleared within 1.5M steps
-- Previous training (old action space) cleared all phases in 1.84M steps; flat action space should be faster
+- All 7 phases cleared by 256k steps. 100% valid rate. Win rate 70-95% at phase 6.
+- Old MultiDiscrete run took 1.84M steps; flat action space was 7x faster.
 
-**Phase 2: Self-play with pool mixing**
+**Phase 2: Self-play with pool mixing** ✅
 ```bash
 python examples/train_simultaneous.py --size 3 --self-play --self-play-ratio 0.5 \
     --warmup-steps 0 --resume models/size3/stage3/best/best_model.zip --timesteps 2000000
 ```
-- Expected: asymptotic within 1M steps
-- Early-stop if plateau detected
+- Phase 6 reached by 248k steps. Win rate started ~80%, settled to ~65% as self-play opponents strengthened.
+- Asymptotic at 1.2M steps (50-80% band, avg 65%). Early-stopped.
+- All 5 difficulty tiers saved.
 
-**Deploy: Copy difficulty tiers**
-```bash
-cp models/size3/stage3/difficulty/beginner.zip models/size3/stage3/beginner.zip
-cp models/size3/stage3/difficulty/intermediate.zip models/size3/stage3/intermediate.zip
-cp models/size3/stage3/difficulty/expert.zip models/size3/stage3/expert.zip
-```
+**Deploy** ✅ — Models copied and committed.
 
 ## Execution Order
 

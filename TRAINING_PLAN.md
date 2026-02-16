@@ -659,8 +659,8 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 - ✅ Size 4 self-play with pool mixing (Feb 15) — asymptotic at ~78% win rate, all 5 difficulty tiers saved
 
 **Short-term**:
-- Retrain size 2 + 3 with flat Discrete action space + self-play mixing (see [RETRAIN_SIZE2_SIZE3.md](RETRAIN_SIZE2_SIZE3.md))
-- Deploy size 4 model to inference server
+- ✅ Retrain size 2 + 3 with flat Discrete action space + self-play mixing (see [RETRAIN_SIZE2_SIZE3.md](RETRAIN_SIZE2_SIZE3.md))
+- Deploy all models (sizes 2, 3, 4) to inference server
 - Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
 
 **Long-term**:
