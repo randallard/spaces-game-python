@@ -516,10 +516,15 @@ python examples/train_simultaneous.py --size 3 --fog --timesteps 5000000
 # Size 4 fog
 python examples/train_simultaneous.py --size 4 --fog --timesteps 5000000
 
-# Add self-play after pool convergence (same pattern as Stage 3)
+# Add self-play after pool convergence (block scheduling)
+python examples/train_simultaneous.py --size 3 --fog --self-play --warmup-steps 0 \
+    --resume models/size3/stage4/best/best_model.zip --timesteps 5000000 \
+    --self-play-block-steps 200000 --pool-recovery-steps 100000 --min-pool-win-rate 0.60
+
 python examples/train_simultaneous.py --size 4 --fog --timesteps 3000000
 python examples/train_simultaneous.py --size 4 --fog --self-play --warmup-steps 0 \
-    --resume models/size4/stage4/best/best_model.zip --timesteps 5000000
+    --resume models/size4/stage4/best/best_model.zip --timesteps 5000000 \
+    --self-play-block-steps 200000 --pool-recovery-steps 100000 --min-pool-win-rate 0.60
 
 # Monitor
 tensorboard --logdir logs/size3_stage4/
@@ -555,20 +560,21 @@ script or environment needed.
 1. **Warmup** (default 100k steps): JSON pool opponents, agent learns basic construction
 2. **Snapshot** (every 50k steps): Freeze current model, add to rolling pool of 10 snapshots
 3. **Opponent assignment**: Each training env gets a random snapshot as its opponent
-4. **Pool mixing** (`--self-play-ratio`, default 0.5): Each round flips a coin — use self-play model or pool opponent. Prevents specialization collapse where the agent forgets how to beat pool opponents.
+4. **Block scheduling** (default): Dedicated self-play blocks (200k steps at ratio=1.0) alternating with pool evaluation. If pool win rate drops below threshold (60%), switches to pool recovery (100k steps at ratio=0.0) before resuming self-play. Replaces per-round coin-flip mixing for more stable learning.
 5. **Fallback**: If opponent model produces an invalid board, falls back to JSON pool
 
 ### Training Command:
 ```bash
 # Recommended: train against pool first, then resume with self-play
 python examples/train_simultaneous.py --size 4 --timesteps 2000000
-python examples/train_simultaneous.py --size 4 --self-play --self-play-ratio 0.5 \
+python examples/train_simultaneous.py --size 4 --self-play \
     --warmup-steps 0 --resume models/size4/stage3/best/best_model.zip --timesteps 5000000
 
-# With custom self-play parameters:
+# With custom block scheduling parameters:
 python examples/train_simultaneous.py --size 4 --self-play \
     --snapshot-freq 50000 --pool-size 10 --warmup-steps 100000 \
-    --self-play-ratio 0.5 --timesteps 10000000
+    --self-play-block-steps 200000 --pool-recovery-steps 100000 \
+    --min-pool-win-rate 0.60 --timesteps 10000000
 ```
 
 ### Skill Level Snapshots:
@@ -697,9 +703,11 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 - ✅ Size 4 pool training solved (Feb 14) — 100% valid, 100% win at phase 6
 - ✅ Size 4 self-play with pool mixing (Feb 15) — asymptotic at ~78% win rate, all 5 difficulty tiers saved
 - ✅ Fog of war implemented in `SimultaneousPlayEnv` (Feb 16) — `--fog` flag, fog-filtered encoding, `fog_outcomes` obs
+- ✅ Size 3 fog pool training converged (Feb 16) — ~82% win rate, all 6 phases by 256k steps
+- ✅ Self-play block scheduling (Feb 16) — replaces per-round coin-flip mixing with dedicated self-play blocks + pool recovery
 
 **Short-term**:
-- Train Stage 4 fog models for sizes 3 and 4 (see training commands above)
+- Train Stage 4 fog + self-play for sizes 3 and 4 (see training commands above)
 - Run fog experiments from [EXPERIMENTS.md](EXPERIMENTS.md) (signal ablation, fog + self-play dynamics)
 - Deploy all models (sizes 2, 3, 4) to inference server
 
@@ -742,4 +750,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Stage 4 implemented (Feb 16).** Stage 3 fully solved for sizes 2-4. Stage 4 (fog of war) environment and training script implemented — `--fog` flag enables partial opponent board reveal with `fog_outcomes` metadata. Ready to train. See [EXPERIMENTS.md](EXPERIMENTS.md) for planned experiments and [journal/2026-02-16-fog-of-war-implementation.md](journal/2026-02-16-fog-of-war-implementation.md) for implementation details.
+Current Status: **Stage 4 fog training in progress (Feb 16).** Stage 3 fully solved for sizes 2-4. Stage 4 (fog of war) environment implemented — `--fog` flag enables partial opponent board reveal with `fog_outcomes` metadata. Size 3 fog pool-only training converged at ~82% win rate. Self-play block scheduling implemented — dedicated self-play blocks with pool recovery periods replace per-round coin-flip mixing. See [EXPERIMENTS.md](EXPERIMENTS.md) for planned experiments and [journal/2026-02-16-fog-of-war-implementation.md](journal/2026-02-16-fog-of-war-implementation.md) for implementation details.

@@ -227,3 +227,46 @@ The crash manifested as an `EOFError` in the main process because the actual `Ke
 **Fix**: One line — pass `use_fog=self.use_fog` when creating the temp env in `_build_opponent_board_from_model()`.
 
 **Lesson**: Any code path that creates a temporary env for model inference must mirror all observation-space-affecting flags from the parent env. This is the same class of bug as the phase sync issue (Feb 4) — auxiliary envs drifting out of sync with the training env's configuration.
+
+---
+
+## Self-Play Block Scheduling (Feb 16)
+
+The initial self-play attempt used per-round coin-flip mixing (`--self-play-ratio 0.5`): each round independently decides self-play vs pool opponent. After ~318k steps, win rate was volatile (76-87%) and explained variance spiked negative (-0.27). The mixing strategy has a fundamental problem: it interrupts learning in both directions. During a self-play stretch, a random pool board breaks the counter-play signal. During pool training, a self-play board injects non-stationarity.
+
+### Block Scheduling Design
+
+Replace the coin flip with dedicated blocks:
+
+1. **Self-play block** (default 200k steps): Pure self-play (ratio=1.0). The agent plays exclusively against snapshots of itself. No interruptions from pool opponents.
+2. **Block boundary check**: At the end of each block, check pool win rate from `OpponentProgressionCallback`'s evaluation.
+3. **Pool recovery** (default 100k steps): If pool win rate drops below threshold (default 60%), switch to pure pool opponents (ratio=0.0). The agent re-grounds against known-good opponents.
+4. **Resume**: After recovery, start another self-play block.
+
+If pool win rate stays above threshold, skip recovery and start the next self-play block immediately.
+
+### New CLI Flags
+
+```bash
+--self-play-block-steps 200000   # Steps per pure self-play block
+--pool-recovery-steps 100000     # Steps of pool-only if degraded
+--min-pool-win-rate 0.60         # Threshold to trigger recovery
+```
+
+### Training Command
+
+```bash
+python examples/train_simultaneous.py --size 3 --fog --self-play \
+    --warmup-steps 0 \
+    --resume models/size3/stage4/best/best_model.zip \
+    --timesteps 5000000 \
+    --self-play-block-steps 200000 \
+    --pool-recovery-steps 100000 \
+    --min-pool-win-rate 0.60
+```
+
+### Rationale
+
+The key insight: **learning benefits from consistency**. When the agent is playing self-play, it needs sustained exposure to develop counter-strategies. When it needs to recover pool competence, it needs sustained pool exposure without self-play noise. The block boundaries create natural checkpoints where we can assess whether the agent is maintaining breadth (pool win rate) while developing depth (self-play adaptation).
+
+This is the same principle as "one source of non-stationarity at a time" from the Feb 14 self-play collapse — but applied at a finer granularity within a single training run.

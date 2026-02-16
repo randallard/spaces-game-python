@@ -327,16 +327,21 @@ class OpponentProgressionCallback(BaseCallback):
 
 
 class SelfPlayCallback(BaseCallback):
-    """Callback for self-play: periodically snapshot the model and assign
-    frozen copies as opponents to training environments.
+    """Callback for self-play with block scheduling.
+
+    Instead of per-round coin-flip mixing, uses dedicated blocks:
+    - Self-play blocks: pure self-play (ratio=1.0) for block_steps
+    - Pool recovery: pure pool opponents (ratio=0.0) for recovery_steps
+      (triggered when pool win rate drops below min_pool_win_rate)
 
     After warmup_steps, every snapshot_freq steps:
     1. Save current model as a snapshot
     2. Prune oldest if pool exceeds pool_size
     3. Assign a random snapshot to each training env
 
-    ~20% of episodes still use JSON pool fallback (when opponent model
-    produces an invalid board) to prevent self-play collapse.
+    At block boundaries, evaluate against pool opponents. If win rate is
+    above threshold, start another self-play block. If below, switch to
+    pool recovery until the recovery period ends.
 
     Also saves skill-level milestone checkpoints based on eval win rate.
     """
@@ -359,6 +364,9 @@ class SelfPlayCallback(BaseCallback):
         n_envs: int = 4,
         phase_callback: Optional['OpponentProgressionCallback'] = None,
         self_play_ratio: float = 0.5,
+        block_steps: int = 200_000,
+        recovery_steps: int = 100_000,
+        min_pool_win_rate: float = 0.60,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -369,11 +377,20 @@ class SelfPlayCallback(BaseCallback):
         self.n_envs = n_envs
         self.phase_callback = phase_callback
         self.self_play_ratio = self_play_ratio
+        self.block_steps = block_steps
+        self.recovery_steps = recovery_steps
+        self.min_pool_win_rate = min_pool_win_rate
         self.snapshot_paths: List[str] = []
         self._warmup_complete = False
         self._last_snapshot_step = 0
         self._saved_tiers: set = set()
         self._best_win_rate = 0.0
+
+        # Block scheduling state
+        self._in_self_play_block = True  # Start with self-play after warmup
+        self._block_start_step = 0  # n_calls when current block/recovery started
+        self._block_count = 0
+        self._recovery_count = 0
 
         # Create snapshot directory
         self.snapshot_dir = os.path.join(output_dir, "opponent_pool")
@@ -387,18 +404,85 @@ class SelfPlayCallback(BaseCallback):
 
         if not self._warmup_complete:
             self._warmup_complete = True
+            self._block_start_step = self.n_calls
+            self._in_self_play_block = True
             if self.verbose >= 1:
                 print(f"\n  SELF-PLAY: Warmup complete at {total_steps:,} steps")
+                print(f"  SELF-PLAY: Starting self-play block 1 ({self.block_steps:,} steps)")
             self._take_snapshot()
+            self._set_ratio(1.0)
             return True
 
         if self.n_calls - self._last_snapshot_step >= self.snapshot_freq:
             self._take_snapshot()
 
+        # Check block boundaries
+        self._check_block_transition()
+
         # Check for skill milestone checkpoints from phase callback's eval
         self._check_skill_milestones()
 
         return True
+
+    def _check_block_transition(self):
+        """Check if current block/recovery period has ended and transition."""
+        steps_in_block = (self.n_calls - self._block_start_step) * self.n_envs
+
+        if self._in_self_play_block:
+            if steps_in_block >= self.block_steps:
+                # Self-play block ended — check pool win rate
+                pool_win_rate = self._get_latest_pool_win_rate()
+                self._block_count += 1
+
+                if pool_win_rate < self.min_pool_win_rate:
+                    # Pool performance degraded — switch to recovery
+                    self._in_self_play_block = False
+                    self._block_start_step = self.n_calls
+                    self._set_ratio(0.0)
+                    self._recovery_count += 1
+                    if self.verbose >= 1:
+                        print(f"\n  SELF-PLAY: Block {self._block_count} done. "
+                              f"Pool win rate {pool_win_rate:.1%} < {self.min_pool_win_rate:.1%}")
+                        print(f"  SELF-PLAY: Starting pool recovery {self._recovery_count} "
+                              f"({self.recovery_steps:,} steps)")
+                else:
+                    # Pool performance OK — start another self-play block
+                    self._block_start_step = self.n_calls
+                    if self.verbose >= 1:
+                        print(f"\n  SELF-PLAY: Block {self._block_count} done. "
+                              f"Pool win rate {pool_win_rate:.1%} >= {self.min_pool_win_rate:.1%}")
+                        print(f"  SELF-PLAY: Starting self-play block {self._block_count + 1} "
+                              f"({self.block_steps:,} steps)")
+        else:
+            # In pool recovery
+            if steps_in_block >= self.recovery_steps:
+                # Recovery done — back to self-play
+                self._in_self_play_block = True
+                self._block_start_step = self.n_calls
+                self._set_ratio(1.0)
+                if self.verbose >= 1:
+                    pool_win_rate = self._get_latest_pool_win_rate()
+                    print(f"\n  SELF-PLAY: Recovery {self._recovery_count} done. "
+                          f"Pool win rate now {pool_win_rate:.1%}")
+                    print(f"  SELF-PLAY: Starting self-play block {self._block_count + 1} "
+                          f"({self.block_steps:,} steps)")
+
+    def _get_latest_pool_win_rate(self) -> float:
+        """Get the latest pool win rate from the phase callback."""
+        if self.phase_callback is None or not self.phase_callback.phase_history:
+            return 1.0  # Assume OK if no data
+        return self.phase_callback.phase_history[-1].get("game_win_rate", 1.0)
+
+    def _set_ratio(self, ratio: float):
+        """Set self-play ratio on all training envs."""
+        for i in range(self.n_envs):
+            try:
+                self.training_env.env_method(
+                    "set_self_play_ratio", ratio, indices=[i],
+                )
+            except Exception as e:
+                if self.verbose >= 1:
+                    print(f"  Warning: Could not set ratio for env {i}: {e}")
 
     def _take_snapshot(self):
         """Save model snapshot and assign to training envs."""
@@ -418,10 +502,12 @@ class SelfPlayCallback(BaseCallback):
                 os.remove(old_path)
 
         if self.verbose >= 1:
-            print(f"  SELF-PLAY: Snapshot saved ({len(self.snapshot_paths)} in pool)")
+            mode = "SELF-PLAY" if self._in_self_play_block else "RECOVERY"
+            print(f"  {mode}: Snapshot saved ({len(self.snapshot_paths)} in pool)")
 
-        # Assign random snapshots to training envs
-        self._assign_opponents()
+        # Assign random snapshots to training envs (only during self-play blocks)
+        if self._in_self_play_block:
+            self._assign_opponents()
 
     def _assign_opponents(self):
         """Assign a random snapshot to each training env."""
@@ -433,9 +519,6 @@ class SelfPlayCallback(BaseCallback):
             try:
                 self.training_env.env_method(
                     "set_opponent_model", path, indices=[i],
-                )
-                self.training_env.env_method(
-                    "set_self_play_ratio", self.self_play_ratio, indices=[i],
                 )
             except Exception as e:
                 if self.verbose >= 1:
@@ -545,6 +628,9 @@ def train(
     warmup_steps: int = 100_000,
     self_play_ratio: float = 0.5,
     win_rate_threshold: float = 0.70,
+    self_play_block_steps: int = 200_000,
+    pool_recovery_steps: int = 100_000,
+    min_pool_win_rate: float = 0.60,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -593,10 +679,13 @@ def train(
     if use_fog:
         print(f"\nFog of war:        ENABLED (partial opponent reveal)")
     if self_play:
-        print(f"\nSelf-play enabled:")
+        print(f"\nSelf-play enabled (block scheduling):")
         print(f"  Snapshot freq:   {snapshot_freq:,} steps")
         print(f"  Pool size:       {pool_size}")
         print(f"  Warmup steps:    {warmup_steps:,}")
+        print(f"  Block steps:     {self_play_block_steps:,} (pure self-play per block)")
+        print(f"  Recovery steps:  {pool_recovery_steps:,} (pool-only if degraded)")
+        print(f"  Min pool WR:     {min_pool_win_rate:.0%} (threshold for recovery)")
     if resume_from:
         print(f"\nResuming from:     {resume_from}")
     print("=" * 70)
@@ -715,6 +804,9 @@ def train(
             n_envs=n_envs,
             phase_callback=phase_callback,
             self_play_ratio=self_play_ratio,
+            block_steps=self_play_block_steps,
+            recovery_steps=pool_recovery_steps,
+            min_pool_win_rate=min_pool_win_rate,
             verbose=1,
         )
         callbacks.append(self_play_callback)
@@ -836,6 +928,18 @@ if __name__ == "__main__":
         "--win-rate-threshold", type=float, default=0.70,
         help="Win rate required to advance curriculum phase (default: 0.70, try 0.55 for size 2)",
     )
+    parser.add_argument(
+        "--self-play-block-steps", type=int, default=200_000,
+        help="Steps per pure self-play block (default: 200,000)",
+    )
+    parser.add_argument(
+        "--pool-recovery-steps", type=int, default=100_000,
+        help="Steps of pool-only training when pool win rate drops (default: 100,000)",
+    )
+    parser.add_argument(
+        "--min-pool-win-rate", type=float, default=0.60,
+        help="Pool win rate threshold to trigger recovery (default: 0.60)",
+    )
 
     args = parser.parse_args()
 
@@ -866,4 +970,7 @@ if __name__ == "__main__":
         warmup_steps=args.warmup_steps,
         self_play_ratio=args.self_play_ratio,
         win_rate_threshold=args.win_rate_threshold,
+        self_play_block_steps=args.self_play_block_steps,
+        pool_recovery_steps=args.pool_recovery_steps,
+        min_pool_win_rate=args.min_pool_win_rate,
     )
