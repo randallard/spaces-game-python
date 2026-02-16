@@ -62,12 +62,14 @@ python examples/train_simultaneous.py --size 3 --fog --timesteps 5000000 \
 | Win rate delta when fog_outcomes zeroed | ? | ? |
 | Total timesteps to convergence | ? | ? |
 
+**Infrastructure status (Feb 16, 2026):** Experiment 1A is ready to run. The `--fog` flag on `train_simultaneous.py` enables fog-filtered opponent encoding + `fog_outcomes` observation. See `journal/2026-02-16-fog-of-war-implementation.md` for implementation details. Experiment 1B (`--fog-curriculum`) is not yet implemented — would require a ground-truth mode that fills `fog_outcomes` with full information before transitioning to actual fog.
+
 **What carries over from existing work:**
 - Opponent board pools (`boards/size{N}/`) — unchanged
 - Strict BFS masking — unchanged, construction is fully observable under fog
 - Self-play infrastructure — unchanged, but self-play opponent also builds under fog
-- `_encode_opponent_board()` — needs fog-filtered variant
-- `simulate_round()` return value — already contains `SimulationDetails` with `opponentLastStep`, trap info, etc.
+- `_encode_opponent_board_fog()` — implemented, filters by `playerLastStep` and sprung trap
+- `simulate_round()` return value — already contains `SimulationDetails` with `playerLastStep`, trap info, etc.
 
 ---
 
@@ -133,7 +135,7 @@ Run a tournament:
 
 **3B: Partial boards + outcome booleans** — Add `opponent_hit_trap`, `player_hit_trap`, `collision`, `opponent_reached_goal` per round. The agent knows *what happened* but not how many traps or how far the opponent got.
 
-**3C: Full fog_outcomes** — All signals: steps taken, traps placed during visible steps, plus outcome booleans. Maximum information available to a human watching the play-by-play.
+**3C: Full fog_outcomes (current implementation)** — All 6 channels: opponent_steps_visible, opponent_hit_trap, player_hit_trap, collision, opponent_reached_goal, visible_opponent_traps. Maximum structured information available to a human watching the play-by-play.
 
 ### What to Track
 
@@ -146,6 +148,7 @@ Compare all three at the same timestep budget:
 
 **What carries over from existing work:**
 - Everything from Experiment 1 — this runs on top of whichever fog approach wins
+- The current `fog_outcomes` implementation (6 channels) corresponds to variant 3C. Variants 3A and 3B would require code changes to reduce the signal set
 
 ---
 

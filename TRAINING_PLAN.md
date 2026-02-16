@@ -21,7 +21,7 @@ Stage 2: Reverse Curriculum Construction                 ⚠️  OBSOLETE (repla
    ↓
 Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 + SIZE 4 DONE
    ↓
-Stage 4: 5-Round Play with Fog of War                   ⏳ NEXT UP
+Stage 4: 5-Round Play with Fog of War                   ✅ IMPLEMENTED (ready to train)
    ↓
 Stage 5: Self-Play (Meta-Game)                           ✅ MERGED INTO STAGE 3 (--self-play flag)
    ↓
@@ -367,7 +367,6 @@ accepted for backward compatibility but prints a deprecation warning and does no
 {
     "building_board":    (size, size, 2),    # current construction state
     "construction_step": Discrete,
-    "valid_cells_mask":  MultiBinary,
     "round":             Discrete(5),        # 0-4
     "score_diff":        float,
     "agent_score":       float,
@@ -420,90 +419,130 @@ Size 2-3 training is unaffected — defaults match what worked previously.
 Construction phases accelerate as knowledge compounds: C0 took 164k steps, C3-C6 took only 44k combined.
 
 ### Key findings:
-- Size 2 learns construction from scratch (0% -> 100% valid rate in ~8k steps)
-- Size 3 cannot learn construction from scratch (8% valid rate at 27k steps) -- scaffolding essential
-- Size 3 with scaffolding completes full curriculum in ~460k n_calls (1.84M timesteps)
-- Scoring fix (first-visit forward movement only) was critical -- agent exploited oscillation for free points
-- `ent_coef=0.05` works well
+- Strict masking eliminates invalid boards structurally — 100% valid rate from the start
+- Size 2 learns construction from scratch in ~8k steps
+- Construction scaffolding removed (Feb 14) — strict masking makes it unnecessary
+- Scoring fix (first-visit forward movement only) was critical — agent exploited oscillation for free points
+- `ent_coef=0.05` works well for sizes 2-3; try 0.1 for size 4+
 
 ---
 
-## Stage 4: 5-Round Play with Fog of War (NEXT UP)
+## Stage 4: 5-Round Play with Fog of War (IMPLEMENTED)
 
-**Purpose**: Same as Stage 3 but with partial observability. After simulation, agent only sees opponent's moves up to the point they were stopped (trap/collision/goal), plus outcome info. Must infer opponent's full strategy from limited data.
+**Purpose**: Same as Stage 3 but with partial observability. After simulation, the agent only sees opponent moves up to the step where the agent's round ended (`playerLastStep`). Traps are hidden unless the agent actually hit one (the "sprung" trap). The meta-game shifts from "counter what you saw" to "infer and adapt from partial information."
 
-**Prerequisites**: Stage 3 complete for the target board size.
+**Prerequisites**: Stage 3 complete for the target board size. Opponent board pools, strict masking, self-play infrastructure all carry over unchanged.
+
+**Status**: Implemented (Feb 16, 2026). Size 3 pool-only training converged at ~82% win rate (all 6 phases cleared by 256k steps). Self-play in progress. See [EXPERIMENTS.md](EXPERIMENTS.md) for alternative approaches (fog curriculum, signal ablation).
 
 ### What Agent Learns:
-- Inference from partial data (opponent stopped early -> had a trap/was trapped)
+- Inference from partial data (got stopped early -> hit a trap, only saw 3 of opponent's 6 moves)
 - Pattern recognition from incomplete information across rounds
 - Risk assessment (opponent's hidden traps vs revealed traps)
 - Adaptive construction under uncertainty
+- What the fog outcome signals mean (collision, trap hits, opponent progress)
 
 ### Game Flow (per round):
 ```
-1. Agent constructs board (blind)
-2. Opponent picks from pool
+1. Agent constructs board (blind - construction is fully observable, fog only affects opponent reveal)
+2. Opponent picks from pool (or self-play model)
 3. Simulation runs
-4. Agent sees PARTIAL opponent board (moves up to opponentLastStep)
-5. Agent sees outcome: opponent_hit_trap, collision, opponent_reached_goal
-6. Scores update, next round begins
+4. Agent sees PARTIAL opponent board (piece moves up to playerLastStep only)
+5. Agent sees fog_outcomes: player_hit_trap, opponent_hit_trap, collision, etc.
+6. Traps hidden EXCEPT the sprung trap (the one the agent hit)
+7. Scores update, next round begins
 ```
 
-### Fog of War Visibility Rules (from TypeScript reference):
+### Fog of War Visibility Rules:
 
-Three tiers of information under fog:
+**`playerLastStep` determines visibility** — the agent sees as far as it played. If the agent hit a trap at step 3, it sees opponent piece moves with `order - 1 <= 3` (order is 1-based, step is 0-based).
 
-**1. Fully visible:**
-- Opponent piece moves up to their last executed step (`opponentLastStep`)
-- Opponent traps that the agent actually stepped on (sprung traps — position revealed)
-- Round outcome: who won, scores, how it ended (goal/trap/collision)
+**Visible:**
+- Opponent piece moves where `move.order - 1 <= playerLastStep`
+- The sprung trap (the one the agent landed on) — position and order revealed
+- Round outcomes via `fog_outcomes` signals (see below)
+- Scores (always visible)
 
-**2. Partially visible (existence only, no position):**
-- When opponent places a trap during an executed step, the explanation reveals
-  "a trap was set" — but NOT where. The agent knows the opponent has a trap
-  somewhere, but not its location. This is a key strategic signal.
+**Hidden:**
+- Opponent piece moves after `playerLastStep`
+- ALL opponent traps except the sprung trap
+- The full board layout beyond what was observed
 
-**3. Completely hidden:**
-- Opponent moves after `opponentLastStep` (if round ended early)
-- Opponent traps that were never triggered AND placed after the last executed step
-- The full board layout / unexecuted portions of the opponent's sequence
+### Observation Space (additions to Stage 3):
 
-### Observation Space Changes from Stage 3:
-- `opponent_history` shows only revealed moves (sequence[:opponentLastStep+1])
-- Opponent trap channel: only filled for sprung traps (agent hit them)
-- Positions rotated to agent's frame via _rotate_position()
-- `fog_outcomes` per round: [opponent_hit_trap, collision, opponent_reached_goal, opponent_placed_trap_visible]
-  - `opponent_placed_trap_visible`: 1 if a trap was placed during an executed step (existence signal, no position)
-- When opponent hits agent's trap early, their later moves (especially traps) remain hidden
+The `--fog` flag adds `fog_outcomes` to the obs space. All Stage 3 observations remain unchanged.
 
-### Current State:
-- `play_against_agent.py --fog` already implements fog for the **human player's view** (display-only)
-- The **agent's training env** does NOT have fog yet -- `opponent_history` always shows full boards
-- Need to add fog to `SimultaneousPlayEnv` so the agent trains under partial observability
+```python
+# Stage 3 obs (unchanged):
+{
+    "building_board":    (size, size, 2),     # current construction state
+    "construction_step": Discrete,
+    "round":             Discrete(5),
+    "score_diff":        float,
+    "agent_score":       float,
+    "opponent_score":    float,
+    "opponent_history":  (5, size, size, 2),  # fog-FILTERED when use_fog=True
+}
 
-### Implementation Plan:
-- Add `fog_of_war` flag to `SimultaneousPlayEnv`
-- Modify `_encode_opponent_board()` to use `simulationDetails.opponentLastStep` for partial encoding
-- Add `fog_outcomes` to observation space: per-round [opponent_hit_trap, collision, opponent_reached_goal]
-- Option A: Add fog as a `--fog` flag for a separate training run (resume from Stage 3 weights)
-- Option B: Add fog as later opponent curriculum phases (auto-transition after full-reveal phases)
+# Stage 4 addition (only when --fog):
+{
+    "fog_outcomes": Box(0, 1, shape=(5, 6)),  # per-round signals:
+    # Channel 0: opponent_steps_visible (playerLastStep / max_steps, normalized)
+    # Channel 1: opponent_hit_trap (0 or 1 — did opponent hit one of agent's traps?)
+    # Channel 2: player_hit_trap (0 or 1 — did agent hit an opponent trap?)
+    # Channel 3: collision (0 or 1)
+    # Channel 4: opponent_reached_goal (proxy from scoring)
+    # Channel 5: visible_opponent_traps (count of sprung traps, normalized by max_traps)
+}
+```
 
-### Training Progression:
+### Implementation Details:
+
+- `SimultaneousPlayEnv(use_fog=True)` enables fog mode
+- `_encode_opponent_board_fog(board, player_last_step, sprung_trap_pos)` — fog-filtered version of `_encode_opponent_board()`
+- `_finish_round()` extracts `SimulationDetails` fields (`playerLastStep`, `playerHitTrap`, `playerTrapPosition`) and populates both the filtered grid and `fog_outcomes`
+- Construction masking unchanged — the agent's own board construction is fully observable
+- Reward structure unchanged — same shaping rewards, same game outcome bonuses
+- Self-play works under fog — the opponent model also builds against a fog-filtered view
+- 12 unit tests in `tests/test_fog_of_war.py`
+
+### Training Commands:
+
 ```bash
-# Size 3: fog of war (resume from Stage 3 model)
-python examples/train_simultaneous.py --size 3 --fog --timesteps 2000000 \
-    --resume models/size3/stage3/best/best_model.zip
+# Option A: Fog from scratch (recommended first approach)
+# Agent never sees full boards — learns fog reasoning natively
+python examples/train_simultaneous.py --size 3 --fog --timesteps 5000000
 
-# Or from scratch with scaffolding + fog
-python examples/train_simultaneous.py --size 3 --fog \
-    --board-library new_boards_3.json --timesteps 3000000
+# Size 4 fog
+python examples/train_simultaneous.py --size 4 --fog --timesteps 5000000
+
+# Add self-play after pool convergence (same pattern as Stage 3)
+python examples/train_simultaneous.py --size 4 --fog --timesteps 3000000
+python examples/train_simultaneous.py --size 4 --fog --self-play --warmup-steps 0 \
+    --resume models/size4/stage4/best/best_model.zip --timesteps 5000000
+
+# Monitor
+tensorboard --logdir logs/size3_stage4/
 ```
 
-### Open Questions:
-- Should fog be a separate run or added as later curriculum phases?
-- Can we resume from Stage 3 weights? (obs space changes if fog_outcomes added)
-- What win rate threshold makes sense under fog? (inherently noisier than full reveal)
+Logs go to `logs/sizeN_stage4/`, models to `models/sizeN/stage4/`.
+
+### Key Design Decision: Train from Scratch (Option A)
+
+We chose fog-from-scratch rather than resuming from Stage 3 weights. Rationale:
+- Stage 3 models have no `fog_outcomes` in their obs space — can't resume without architecture mismatch
+- The agent shouldn't develop a dependency on full information that it then has to unlearn
+- Construction learning is fast with strict masking — the agent re-learns board building in ~50k steps
+
+See [EXPERIMENTS.md](EXPERIMENTS.md) for the alternative fog curriculum approach (Experiment 1B) and signal ablation experiments (Experiment 3).
+
+### What to Watch For:
+
+1. **Phase progression speed**: Expect slower than Stage 3 (noisier learning signal)
+2. **Valid rate**: Should stay at 100% (strict masking doesn't depend on fog)
+3. **Win rate ceiling**: Expect lower than Stage 3's ~78%. Partial information limits perfect counter-play
+4. **fog_outcomes utilization**: After training, zero out fog_outcomes and re-evaluate. If no performance drop, the agent isn't using them
+5. **Round-over-round adaptation**: Does the agent change strategy based on partial observations?
 
 ---
 
@@ -605,19 +644,19 @@ python examples/play_vs_agent.py \
 ### Training Commands:
 
 ```bash
-# Size 2 (strict masking, no scaffolding needed)
+# Stage 3: Full reveal (sizes 2-4 already solved)
 python examples/train_simultaneous.py --size 2 --timesteps 200000
-
-# Size 3
 python examples/train_simultaneous.py --size 3 --timesteps 2000000
-
-# Size 4 with self-play
 python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
 
-# Monitor
-tensorboard --logdir logs/size4_stage3/
+# Stage 4: Fog of war
+python examples/train_simultaneous.py --size 3 --fog --timesteps 5000000
+python examples/train_simultaneous.py --size 4 --fog --timesteps 5000000
 
-# Produces: models/size{N}/stage3/difficulty/{beginner,intermediate,...,expert}.zip
+# Monitor
+tensorboard --logdir logs/size3_stage4/
+
+# Produces: models/size{N}/stage{3,4}/difficulty/{beginner,intermediate,...,expert}.zip
 ```
 
 ### Play Against the Agent:
@@ -634,7 +673,7 @@ python examples/play_against_agent.py --size 3 --difficulty expert
 # Interactive model selection (auto-discovers difficulty models)
 python examples/play_against_agent.py --size 3 --board-library new_boards_3.json
 
-# With fog of war (display-only, not yet in training)
+# With fog of war display (human sees partial opponent boards)
 python examples/play_against_agent.py --size 3 --rounds 5 --fog
 ```
 
@@ -657,15 +696,16 @@ Use `--min-phase-steps 100000` (vs default 10000) to ensure each phase gets deep
 - ✅ Strict masking + self-play rework (Feb 14) — scaffolding removed, flat action space, forward-only movement
 - ✅ Size 4 pool training solved (Feb 14) — 100% valid, 100% win at phase 6
 - ✅ Size 4 self-play with pool mixing (Feb 15) — asymptotic at ~78% win rate, all 5 difficulty tiers saved
+- ✅ Fog of war implemented in `SimultaneousPlayEnv` (Feb 16) — `--fog` flag, fog-filtered encoding, `fog_outcomes` obs
 
 **Short-term**:
-- ✅ Retrain size 2 + 3 with flat Discrete action space + self-play mixing (see [RETRAIN_SIZE2_SIZE3.md](RETRAIN_SIZE2_SIZE3.md))
+- Train Stage 4 fog models for sizes 3 and 4 (see training commands above)
+- Run fog experiments from [EXPERIMENTS.md](EXPERIMENTS.md) (signal ablation, fog + self-play dynamics)
 - Deploy all models (sizes 2, 3, 4) to inference server
-- Implement fog of war in `SimultaneousPlayEnv` (Stage 4)
 
 **Long-term**:
 - Scale to size 5+
-- Human vs agent exhibition matches
+- Human vs agent exhibition matches (fog of war — the real game)
 
 ---
 
@@ -693,6 +733,8 @@ tensorboard --logdir logs/
 
 - `examples/README.md` - Detailed tool documentation
 - `TRAINING.md` - Training machine setup and tips
+- `DEPLOYMENT.md` - Railway deployment, inference server, and fog of war agent selection
+- `EXPERIMENTS.md` - Fog of war experiments and LLM vs RL comparisons
 - `README.md` - Project overview and installation
 - `journal/` - Training journals with detailed analysis per session
 
@@ -700,4 +742,4 @@ tensorboard --logdir logs/
 
 **This is a living document** - Will be updated as each stage is implemented and results are analyzed.
 
-Current Status: **Size 2 + 3 + 4 complete (Feb 15).** Stage 3 fully solved for sizes 2-4. Size 4 uses strict action masking (BFS reachability), flat Discrete action space, forward-only movement, original shaping rewards, and self-play with pool opponent mixing (`--self-play-ratio 0.5`). Asymptotic at ~78% win rate against pool opponents. All 5 difficulty tiers saved. Next: Stage 4 (fog of war).
+Current Status: **Stage 4 implemented (Feb 16).** Stage 3 fully solved for sizes 2-4. Stage 4 (fog of war) environment and training script implemented — `--fog` flag enables partial opponent board reveal with `fog_outcomes` metadata. Ready to train. See [EXPERIMENTS.md](EXPERIMENTS.md) for planned experiments and [journal/2026-02-16-fog-of-war-implementation.md](journal/2026-02-16-fog-of-war-implementation.md) for implementation details.

@@ -158,6 +158,7 @@ class OpponentProgressionCallback(BaseCallback):
         output_dir: str = "models/stage3",
         phase_map: Optional[Dict[int, List[int]]] = None,
         start_opponent_phase: Optional[int] = None,
+        use_fog: bool = False,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -181,6 +182,7 @@ class OpponentProgressionCallback(BaseCallback):
             opponent_phase=self.current_phase,
             max_construction_steps=max_construction_steps,
             phase_map=phase_map,
+            use_fog=use_fog,
         )
 
     def _on_step(self) -> bool:
@@ -501,6 +503,7 @@ def make_env(
     opponent_phase: int = 0,
     max_construction_steps: int = 20,
     phase_map: Optional[Dict[int, List[int]]] = None,
+    use_fog: bool = False,
 ):
     """Create a single environment instance with action masking."""
     def _init():
@@ -510,6 +513,7 @@ def make_env(
             opponent_phase=opponent_phase,
             max_construction_steps=max_construction_steps,
             phase_map=phase_map,
+            use_fog=use_fog,
         )
         env.reset(seed=seed + rank)
         env = ActionMasker(env, mask_fn)
@@ -534,6 +538,7 @@ def train(
     n_steps: int = 2048,
     batch_size: int = 64,
     start_opponent_phase: Optional[int] = None,
+    use_fog: bool = False,
     self_play: bool = False,
     snapshot_freq: int = 50_000,
     pool_size: int = 10,
@@ -549,8 +554,9 @@ def train(
             print(f"ERROR: No board pools found in boards/size{board_size}/")
             return
 
+    stage = "stage4" if use_fog else "stage3"
     if output_dir is None:
-        output_dir = f"models/size{board_size}/stage3"
+        output_dir = f"models/size{board_size}/{stage}"
 
     max_construction_steps = board_size * 10
     phase_map = build_phase_map(len(opponent_pools))
@@ -560,7 +566,8 @@ def train(
         print(f"WARNING: --board-library is deprecated (strict masking makes scaffolding unnecessary)")
 
     print("=" * 70)
-    print("SIMULTANEOUS 5-ROUND PLAY (Stage 3) - MaskablePPO")
+    stage_label = "Stage 4 - FOG OF WAR" if use_fog else "Stage 3"
+    print(f"SIMULTANEOUS 5-ROUND PLAY ({stage_label}) - MaskablePPO")
     print("=" * 70)
     print(f"Board size:        {board_size}x{board_size}")
     print(f"Total timesteps:   {total_timesteps:,}")
@@ -583,6 +590,8 @@ def train(
         active = [opponent_pools[i] for i in pool_indices if i < len(opponent_pools)]
         names = [Path(p).stem for p in active]
         print(f"  Phase {phase}: {', '.join(names)}")
+    if use_fog:
+        print(f"\nFog of war:        ENABLED (partial opponent reveal)")
     if self_play:
         print(f"\nSelf-play enabled:")
         print(f"  Snapshot freq:   {snapshot_freq:,} steps")
@@ -599,8 +608,8 @@ def train(
             return
 
     # Create directories
-    log_dir = f"logs/size{board_size}_stage3"
-    eval_dir = f"eval/size{board_size}_stage3"
+    log_dir = f"logs/size{board_size}_{stage}"
+    eval_dir = f"eval/size{board_size}_{stage}"
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(eval_dir, exist_ok=True)
@@ -613,6 +622,7 @@ def train(
         opponent_phase=initial_opponent_phase,
         max_construction_steps=max_construction_steps,
         phase_map=phase_map,
+        use_fog=use_fog,
     )
 
     # Create training environments
@@ -644,6 +654,7 @@ def train(
         output_dir=output_dir,
         phase_map=phase_map,
         start_opponent_phase=start_opponent_phase,
+        use_fog=use_fog,
         verbose=1,
     )
 
@@ -798,6 +809,10 @@ if __name__ == "__main__":
         help="Skip construction and start at this opponent phase (use with --resume)",
     )
     parser.add_argument(
+        "--fog", action="store_true",
+        help="Enable fog of war (Stage 4): partial opponent board reveal after simulation",
+    )
+    parser.add_argument(
         "--self-play", action="store_true",
         help="Enable self-play with rolling opponent pool",
     )
@@ -844,6 +859,7 @@ if __name__ == "__main__":
         n_steps=args.n_steps,
         batch_size=args.batch_size,
         start_opponent_phase=args.start_opponent_phase,
+        use_fog=args.fog,
         self_play=args.self_play,
         snapshot_freq=args.snapshot_freq,
         pool_size=args.pool_size,

@@ -71,6 +71,7 @@ class SimultaneousPlayEnv(gym.Env):
         phase_map: Optional[Dict[int, List[int]]] = None,
         max_construction_steps: int = 20,
         board_library_path: Optional[str] = None,
+        use_fog: bool = False,
     ):
         super().__init__()
 
@@ -93,6 +94,9 @@ class SimultaneousPlayEnv(gym.Env):
 
         # board_library_path accepted for backward compatibility but ignored
         # (strict masking makes construction scaffolding unnecessary)
+
+        # Fog of war (Stage 4): partial opponent board reveal
+        self.use_fog = use_fog
 
         # Self-play support
         self._opponent_model = None
@@ -136,12 +140,21 @@ class SimultaneousPlayEnv(gym.Env):
             ),
         })
 
+        # Fog of war: add per-round outcome signals
+        if self.use_fog:
+            self.observation_space["fog_outcomes"] = spaces.Box(
+                low=0, high=1, shape=(self.ROUNDS_PER_GAME, 6), dtype=np.float32,
+            )
+
         # Persistent game state (across rounds within episode)
         self.current_round = 0
         self.agent_total_score = 0
         self.opponent_total_score = 0
         self.opponent_history_grids = np.zeros(
             (self.ROUNDS_PER_GAME, board_size, board_size, 2), dtype=np.int32,
+        )
+        self.fog_outcomes_data = np.zeros(
+            (self.ROUNDS_PER_GAME, 6), dtype=np.float32,
         )
 
         # Construction state (resets each round)
@@ -193,6 +206,44 @@ class SimultaneousPlayEnv(gym.Env):
         for move in board.sequence:
             if move.type == "final":
                 continue
+            rot = _rotate_position(
+                move.position.row, move.position.col, self.board_size,
+            )
+            if rot.row < 0 or rot.row >= self.board_size:
+                continue
+            if rot.col < 0 or rot.col >= self.board_size:
+                continue
+            channel = 0 if move.type == "piece" else 1
+            grid[rot.row][rot.col][channel] = move.order
+        return grid
+
+    def _encode_opponent_board_fog(
+        self,
+        board: Board,
+        player_last_step: int,
+        sprung_trap_pos: Optional[Position],
+    ) -> np.ndarray:
+        """Encode opponent board with fog of war filtering.
+
+        Only shows:
+        - Piece moves where move.order - 1 <= player_last_step (order is 1-based)
+        - The sprung trap (the one the player hit), if any
+        - Hides all other traps and moves beyond visibility
+        """
+        grid = np.zeros((self.board_size, self.board_size, 2), dtype=np.int32)
+        for move in board.sequence:
+            if move.type == "final":
+                continue
+            # Visibility check: move.order is 1-based, step is 0-based
+            if move.type == "piece" and (move.order - 1) > player_last_step:
+                continue  # Move happened after player's round ended
+            if move.type == "trap":
+                # Only show the sprung trap
+                if sprung_trap_pos is None:
+                    continue
+                if (move.position.row != sprung_trap_pos.row or
+                        move.position.col != sprung_trap_pos.col):
+                    continue
             rot = _rotate_position(
                 move.position.row, move.position.col, self.board_size,
             )
@@ -488,7 +539,7 @@ class SimultaneousPlayEnv(gym.Env):
 
     def _get_observation(self) -> Dict[str, Any]:
         """Get current observation."""
-        return {
+        obs = {
             "building_board": self.building_grid.copy(),
             "construction_step": min(self.construction_step, self.max_construction_steps),
             "round": min(self.current_round, self.ROUNDS_PER_GAME - 1),
@@ -504,6 +555,9 @@ class SimultaneousPlayEnv(gym.Env):
             ),
             "opponent_history": self.opponent_history_grids.copy(),
         }
+        if self.use_fog:
+            obs["fog_outcomes"] = self.fog_outcomes_data.copy()
+        return obs
 
     # --- Gym API ---
 
@@ -522,6 +576,9 @@ class SimultaneousPlayEnv(gym.Env):
         self.opponent_history_grids = np.zeros(
             (self.ROUNDS_PER_GAME, self.board_size, self.board_size, 2),
             dtype=np.int32,
+        )
+        self.fog_outcomes_data = np.zeros(
+            (self.ROUNDS_PER_GAME, 6), dtype=np.float32,
         )
 
         # Track agent's boards for opponent history in self-play
@@ -648,6 +705,7 @@ class SimultaneousPlayEnv(gym.Env):
             reward += -20.0
             agent_round_score = 0
             opponent_round_score = 5  # Default win for opponent
+            result = None
         else:
             # Simulate
             result = simulate_round(
@@ -670,10 +728,38 @@ class SimultaneousPlayEnv(gym.Env):
         self.agent_total_score += agent_round_score
         self.opponent_total_score += opponent_round_score
 
-        # Record opponent's board in history (full reveal)
-        self.opponent_history_grids[self.current_round] = (
-            self._encode_opponent_board(opponent_board)
-        )
+        # Record opponent's board in history
+        if self.use_fog and result is not None:
+            details = result.simulationDetails
+            # Fog-filtered encoding: only show moves up to playerLastStep
+            # and only the sprung trap (the one the player hit)
+            sprung_trap_pos = details.playerTrapPosition
+            self.opponent_history_grids[self.current_round] = (
+                self._encode_opponent_board_fog(
+                    opponent_board, details.playerLastStep, sprung_trap_pos,
+                )
+            )
+            # Populate fog outcome signals for this round
+            max_steps = max(
+                len([m for m in opponent_board.sequence if m.type != "final"]),
+                1,
+            )
+            # Count visible opponent traps (sprung trap only in fog)
+            visible_traps = 1 if details.playerHitTrap else 0
+            max_traps = self.board_size - 1
+            self.fog_outcomes_data[self.current_round] = np.array([
+                details.playerLastStep / max(max_steps, 1),  # opponent_steps_visible (normalized)
+                float(details.opponentHitTrap),               # opponent_hit_trap
+                float(details.playerHitTrap),                  # player_hit_trap
+                float(result.collision),                       # collision
+                float(result.opponentPoints > 0 and not result.collision and not details.opponentHitTrap),  # opponent_reached_goal (proxy)
+                visible_traps / max(max_traps, 1),             # visible_opponent_traps (normalized)
+            ], dtype=np.float32)
+        else:
+            # Full reveal (no fog)
+            self.opponent_history_grids[self.current_round] = (
+                self._encode_opponent_board(opponent_board)
+            )
 
         # Advance round
         self.current_round += 1
@@ -749,11 +835,13 @@ class SimultaneousPlayEnv(gym.Env):
         max_steps = self.max_construction_steps
 
         # Create a temporary env for opponent construction
+        # Must match use_fog so obs space matches the opponent model's expectations
         opp_env = SimultaneousPlayEnv(
             board_size=self.board_size,
             opponent_pools=self.opponent_pool_paths,
             max_construction_steps=max_steps,
             phase_map=self.phase_map,
+            use_fog=self.use_fog,
         )
         opp_env.reset(seed=np.random.randint(100000))
 

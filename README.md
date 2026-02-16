@@ -169,32 +169,37 @@ npm run cli -- generate-boards --size 3 --limit 500 --output ../spaces-game-pyth
 
 ## Training Progress
 
-See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, and training commands. See [EXPERIMENTS.md](EXPERIMENTS.md) for fog of war experiments and LLM vs RL comparisons.
+See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, and training commands. See [EXPERIMENTS.md](EXPERIMENTS.md) for fog of war experiments and LLM vs RL comparisons. See [DEPLOYMENT.md](DEPLOYMENT.md) for Railway deployment and inference server setup.
 
 ### Completed Stages
 
 - **Stage 0 - Deck Selection**: Board evaluation and matchup strategy
 - **Stage 1 - Board Construction**: 100% optimal counter-play on 8 curated size-2 boards
-- **Stage 2 - Reverse Curriculum**: Obsolete (replaced by construction scaffolding in Stage 3)
-- **Stage 3 - Simultaneous 5-Round Play**: Blind board construction + opponent adaptation
+- **Stage 2 - Reverse Curriculum**: Obsolete (replaced by strict masking in Stage 3)
+- **Stage 3 - Simultaneous 5-Round Play (Full Reveal)**: Blind board construction + opponent adaptation
   - Size 2 + 3: Complete (Feb 12, 2026). All opponent phases cleared.
   - Size 4: Complete (Feb 15, 2026). 100% valid rate, ~78% win rate with self-play opponent mixing.
   - Feb 14 rework: strict action masking (invalid boards impossible), flat Discrete action space, forward-only movement, self-play added.
   - Feb 15: Added `--self-play-ratio` for pool opponent mixing during self-play, preventing specialization collapse.
+- **Stage 4 - Fog of War**: Implemented (Feb 16, 2026). Partial opponent board reveal after simulation.
+  - `--fog` flag on `train_simultaneous.py` enables fog-filtered encoding + `fog_outcomes` observation
+  - Agent only sees opponent moves up to `playerLastStep`; traps hidden except sprung trap
+  - Ready to train — see [EXPERIMENTS.md](EXPERIMENTS.md) for planned experiments
 
-### Current Status: Size 4 Complete
+### Current Status: Stage 4 (Fog of War) Implemented
 
-Size 4 solved with self-play + pool opponent mixing (`--self-play-ratio 0.5`). The agent maintains ~78% win rate against pool opponents while training against frozen copies of itself. All 5 difficulty tiers saved (beginner through advanced_plus).
+Stage 3 (full reveal) solved for sizes 2-4. Size 4 achieves ~78% win rate with self-play + pool opponent mixing. Stage 4 (fog of war) environment and training script are implemented and ready to train.
+
+Under fog of war, the agent only sees opponent moves up to the step where its round ended (`playerLastStep`). Traps are hidden unless the agent actually hit one. The `fog_outcomes` observation provides structured metadata about each round (trap hits, collisions, opponent progress).
 
 ```bash
-# Size 4 with self-play and pool mixing
-python examples/train_simultaneous.py --size 4 --self-play --self-play-ratio 0.5 \
-    --warmup-steps 0 --resume models/size4/stage3/best/best_model.zip --timesteps 5000000
+# Stage 3: Full reveal (sizes 2-4 already solved)
+python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
+
+# Stage 4: Fog of war (ready to train)
+python examples/train_simultaneous.py --size 3 --fog --timesteps 5000000
+python examples/train_simultaneous.py --size 4 --fog --timesteps 5000000
 ```
-
-### Next: Stage 4 (Fog of War)
-
-Partial observability — agent only sees opponent moves up to their last executed step.
 
 ### Play Against the Agent
 
@@ -206,7 +211,7 @@ python examples/play_against_agent.py --size 3 --difficulty expert
 # Interactive model selection
 python examples/play_against_agent.py --size 3 --board-library new_boards_3.json
 
-# With fog of war (display-only, not yet in training)
+# With fog of war display (human sees partial opponent boards)
 python examples/play_against_agent.py --size 3 --rounds 5 --fog
 
 # Stochastic mode (agent samples from policy for varied play)

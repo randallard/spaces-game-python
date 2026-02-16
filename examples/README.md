@@ -1,8 +1,8 @@
 # Spaces Game Examples
 
 > **Note:** This README covers Stage 0 tools (`random_agent.py`, `train_basic.py`, `evaluate_agent.py`). For current training and play scripts, see [TRAINING_PLAN.md](../TRAINING_PLAN.md):
-> - `train_simultaneous.py` — Stage 3 training with construction scaffolding, opponent curriculum, and difficulty checkpoints
-> - `play_against_agent.py` — Interactive play with difficulty selection, fog of war, multi-round games
+> - `train_simultaneous.py` — Stage 3 (full reveal) and Stage 4 (fog of war) training with opponent curriculum, self-play, and difficulty checkpoints. Use `--fog` for Stage 4.
+> - `play_against_agent.py` — Interactive play with difficulty selection, fog of war display, multi-round games
 > - `train_construction.py` — Stage 1 counter-play training
 
 This directory contains example scripts demonstrating how to use the Spaces Game Gymnasium environment.
