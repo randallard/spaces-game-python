@@ -44,6 +44,16 @@ from .builder_env import BoardBuilderEnv
 from .reverse_builder_env import ReverseCurriculumBuilderEnv
 from .simultaneous_play_env import SimultaneousPlayEnv
 
+# Training callbacks
+from .callbacks import (
+    discover_pools,
+    build_phase_map,
+    LEGACY_POOL_ORDER,
+    DIFFICULTY_CHECKPOINTS,
+    OpponentProgressionCallback,
+    SelfPlayCurriculumCallback,
+)
+
 # Optional: BoardModifierEnv (Stage 1.5 - experimental)
 try:
     from .modifier_env import BoardModifierEnv
@@ -78,6 +88,13 @@ __all__ = [
     "BoardBuilderEnv",
     "ReverseCurriculumBuilderEnv",
     "SimultaneousPlayEnv",
+    # Callbacks
+    "discover_pools",
+    "build_phase_map",
+    "LEGACY_POOL_ORDER",
+    "DIFFICULTY_CHECKPOINTS",
+    "OpponentProgressionCallback",
+    "SelfPlayCurriculumCallback",
 ]
 
 # Add BoardModifierEnv to exports if available
