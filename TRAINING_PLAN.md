@@ -13,7 +13,7 @@ For deployment to the inference server, see [DEPLOYMENT.md](DEPLOYMENT.md).
 | Size | Stage 3 (Full Reveal) | Stage 4 (Fog) | Self-Play | Model Path |
 |------|----------------------|---------------|-----------|------------|
 | 2 | Complete | Not started | Not needed | `models/size2/stage3/best/` |
-| 3 | Complete | Pool converged (~82% WR) | Fog+SP in progress | `models/size3/stage3/best/` |
+| 3 | Complete | Pool converged (~82% WR) | Fog+SP take 3 running (progressive window) | `models/size3/stage3/best/` |
 | 4 | Complete (~78% WR) | Not started | Complete (pool mixing) | `models/size4/stage3/best/` |
 | 5+ | Not started | - | - | - |
 
@@ -367,8 +367,11 @@ spaces_game/simultaneous_play_env.py
 
 ### Size 3 (Feb 2026)
 - Stage 3: 2M steps, all phases cleared, 65-100% win rate (avg ~75%)
+- Stage 3 + self-play: Complete, difficulty tiers saved
 - Stage 4 fog pool-only: Converged at ~82% win rate by 256K steps
-- Stage 4 fog + self-play: In progress
+- Stage 4 fog + self-play take 1 (block scheduling): Destabilized, ~46% win rate death spiral
+- Stage 4 fog + self-play take 2 (quality controls): Partially recovered but oscillated 40-55%
+- Stage 4 fog + self-play take 3 (progressive window): **Running** (Feb 17) — 7.5M steps, resumed from pool-only best model
 
 ### Size 4 (Feb 2026)
 - Stage 3 pool-only: 2M steps, all 7 phases cleared, 100% valid rate

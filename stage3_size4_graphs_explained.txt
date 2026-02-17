@@ -1,0 +1,278 @@
+Curriculum Metrics (your custom callbacks)
+
+  These are the metrics your OpponentProgressionCallback logs. They measure how well the agent plays the actual game.
+
+  curriculum/construction_phase
+
+  What it is: Which stage of scaffolding the agent is in. Scaffolding means pre-filling part of the board from your board library
+   so the agent only has to learn to place the remaining pieces. Phase 0 = "place just the goal," phase 1 = "place goal + 1 more
+  piece from scratch," etc.
+
+  Your graph: Flat at 0 the entire time. This means construction scaffolding was either skipped or completed instantly. The agent
+   went straight into opponent training.
+
+  curriculum/in_construction
+
+  What it is: Binary flag (0 or 1). 1 = still in the construction curriculum, 0 = moved on to opponent curriculum.
+
+  Your graph: Flat at 0. Confirms the agent is fully past construction and in opponent training for the entire visible run.
+
+  curriculum/opponent_phase
+
+  What it is: Which opponent difficulty tier the agent is currently training against. Your code builds a progressive curriculum
+  from board pool files - phase 0 is the simplest opponents, higher phases mix in harder opponent boards. The agent advances when
+   it hits 70% win rate + 90% valid rate.
+
+  Your graph: Staircase pattern jumping from 0 up to 6. Each step is a phase transition - the agent proved competency and got
+  promoted. The rapid early jumps (0->6 in ~500k steps) then flat line at 6 for the remaining ~1.3M steps tells you the agent
+  handled early difficulties well but is now plateaued at phase 6.
+
+  curriculum/game_win_rate
+
+  What it is: The fraction of evaluation games the agent wins. Measured by your callback running 20 deterministic games (the
+  agent picks its best action, no randomness) every eval_freq steps.
+
+  Your graph: Oscillating between ~0.38 and ~0.55, centered around 0.45-0.50. To advance to phase 7, this needs to hit 0.70. The
+  agent is competitive but not dominant against phase-6 opponents. The lack of upward trend after 1M+ steps suggests it may need
+  more timesteps, hyperparameter tuning, or a different approach to break through.
+
+  curriculum/valid_rate
+
+  What it is: The fraction of boards the agent builds that are valid (playable) - meaning they have a legal path from start to
+  goal. An invalid board is one where the pieces don't form a completable game.
+
+  Your graph: Consistently 94-100%, currently 97.8%. Excellent. The agent has thoroughly learned the rules of board construction
+  for size 4.
+
+  curriculum/avg_reward
+
+  What it is: Mean total reward (cumulative sum of all reward signals) per evaluation episode. Reward is the numerical signal
+  your environment gives the agent after each action - positive for good actions (winning rounds, valid boards, reaching new
+  rows) and negative for bad ones (losing, invalid boards).
+
+  Your graph: Oscillating wildly between roughly -15 and +25. The high variance is expected since game outcomes (win/loss/tie
+  across 5 rounds) have inherent randomness. The center of oscillation being near 0-5 (slightly positive) aligns with the ~50%
+  win rate.
+
+  ---
+  Train Metrics (PPO internals)
+
+  These come from the PPO algorithm (Proximal Policy Optimization) itself. PPO is the specific RL algorithm you're using - it
+  trains two neural networks: a policy network (decides what action to take) and a value network (estimates how much total future
+   reward to expect).
+
+  train/approx_kl
+
+  Term: KL divergence (Kullback-Leibler divergence) - a mathematical measure of how different two probability distributions are.
+  Here it measures how much the policy (the agent's action-selection strategy) changed after one round of training updates.
+
+  What it means: After each batch of experience, PPO updates the neural network weights. approx_kl measures how far the new
+  policy drifted from the old one. Too high (>0.05) = updates are too aggressive, the agent might "forget" what it learned. Too
+  low (<0.001) = updates are too timid, learning is slow.
+
+  Your graph: Fluctuating between 0.003 and 0.004. This is in the healthy sweet spot. The policy is updating meaningfully but not
+   recklessly.
+
+  train/clip_fraction
+
+  Term: Clipping - PPO's core innovation. It prevents the policy from changing too much in a single update by "clipping"
+  (capping) the ratio of new-policy-probability to old-policy-probability. If the ratio exceeds the clip range, the gradient is
+  zeroed out for that sample.
+
+  What it means: clip_fraction is the percentage of training samples where clipping actually activated. High clip fraction (>0.3)
+   = the policy is trying to change a lot and getting constrained. Low (<0.01) = policy is barely changing.
+
+  Your graph: ~1.6-2.4%. Low and stable. The policy is making modest, well-behaved updates. This is normal for a maturing agent -
+   early in training you'd expect higher clip fractions as the policy makes bigger jumps.
+
+  train/clip_range
+
+  What it is: The hyperparameter that controls how much the policy ratio can deviate before clipping kicks in. Set to 0.2 (the
+  PPO default), meaning the new policy probability can be at most 1.2x or at least 0.8x the old probability for any given action.
+
+  Your graph: Flat line at 0.2. This is just confirming your hyperparameter isn't being annealed (some implementations reduce it
+  over time). Nothing to monitor here.
+
+  train/entropy_loss
+
+  Term: Entropy - a measure of randomness/uncertainty in the policy's action choices. High entropy = the agent spreads
+  probability across many actions (exploring). Low entropy = the agent is very confident in one action (exploiting).
+
+  What it means: PPO adds an entropy bonus to the loss function to encourage exploration. entropy_loss is the negative entropy
+  (it's a "loss" the optimizer tries to minimize, but since it's negative, minimizing it means maximizing entropy/exploration).
+  Your ent_coef=0.05 controls how heavily this term is weighted.
+
+  Your graph: Around -0.76 to -0.80. Moderate entropy - the agent has learned preferences but hasn't fully collapsed to
+  deterministic behavior. If this went to near 0, the agent would be "too certain" and might get stuck in a local optimum. The
+  slight downward trend (more negative = more entropy) suggests the agent is actually increasing exploration slightly, possibly
+  because phase 6 opponents require more varied strategies.
+
+  train/explained_variance
+
+  Term: Explained variance - measures how well the value network (the "critic") predicts actual returns. Ranges from -inf to 1.0.
+   A value of 1.0 means perfect predictions. 0.0 means the value network is no better than just predicting the mean. Negative
+  means it's worse than the mean (actively misleading).
+
+  What it means: The value network's job is to estimate "how much total reward will I get from this state onward?" Good
+  predictions help PPO compute better advantage estimates (how much better/worse an action was compared to expectation), which
+  makes policy updates more accurate.
+
+  Your graph: Fluctuating between 0.05 and 0.35, centered around 0.20-0.25. This is mediocre. The value network is only
+  explaining ~25% of the variance in actual returns. For comparison, well-trained agents often reach 0.7-0.9. This is likely
+  because size-4 boards have a large state space and game outcomes are inherently stochastic (opponent board is random). The
+  value network is struggling to predict outcomes reliably. This is the weakest metric in your training.
+
+  train/learning_rate
+
+  What it is: The learning rate - how big a step the optimizer takes when adjusting neural network weights. Higher = bigger jumps
+   = faster learning but risk of instability. Lower = smaller, safer steps.
+
+  Your graph: Flat at 1e-4 (0.0001). You set --learning-rate 1e-4. Not being annealed. Nothing to monitor.
+
+  train/loss
+
+  Term: Loss - the total number the optimizer is trying to minimize. It combines the policy loss (how to improve action
+  selection), value loss (how to improve reward prediction), and entropy loss (exploration bonus). Lower is generally better, but
+   the absolute number isn't very meaningful since these components are on different scales.
+
+  Your graph: Oscillating between 180-320, centered around 250. The high values are dominated by the value_loss component (see
+  below). The variance is high because game outcomes are stochastic. Not trending downward, which aligns with the plateau at
+  phase 6.
+
+  train/policy_gradient_loss
+
+  Term: Policy gradient - the core mechanism of policy optimization. The "gradient" is the mathematical direction the network
+  weights should move to make good actions more probable and bad actions less probable. The policy gradient loss quantifies how
+  much improvement the policy can still make given current experience.
+
+  What it means: Negative values mean the policy found actions that were better than expected (positive advantage) and is
+  reinforcing them. More negative = stronger improvement signal. Values near zero = the policy is already close to optimal for
+  its current experience.
+
+  Your graph: Hovering around -0.010 to -0.011. Small but consistently negative - the agent is still finding marginal
+  improvements each update. The fact that it's not trending toward zero is encouraging; the agent hasn't completely stagnated.
+
+  train/value_loss
+
+  Term: Value loss - the mean squared error (MSE) between the value network's predictions and the actual observed returns. The
+  value network predicted "I'll get X reward" and actually got Y; the loss is (X - Y)^2 averaged over the batch.
+
+  What it means: Lower = better predictions. High value loss means the value network is making large prediction errors. This
+  directly harms training because PPO relies on good value estimates to compute advantages.
+
+  Your graph: 580-750, centered around 650. Very high. This is the root cause of your low explained_variance. The value network
+  simply can't accurately predict outcomes in this environment. This makes sense: size-4 boards have a huge state space, games
+  have 5 rounds with stochastic opponent boards, and the reward signal has high variance. This is the metric I'd focus on if you
+  want to improve training - potentially by using a larger network, different learning rate for the value function, or reward
+  normalization.
+
+  ---
+  Eval Metrics (MaskableEvalCallback)
+
+  These come from SB3's built-in MaskableEvalCallback, which runs 5 deterministic evaluation episodes periodically. Note: this is
+   a different eval from your curriculum callback's 20-episode eval.
+
+  eval/mean_ep_length
+
+  Term: Episode - one complete game (all 5 rounds of board construction + simulation). Episode length = total number of timesteps
+   (individual actions) taken in that episode.
+
+  Your graph: Oscillating 53-65, centered ~58. Relatively stable. Each episode takes about 58 actions, which for 5 rounds of
+  size-4 board construction is reasonable (~11-12 actions per round).
+
+  eval/mean_reward
+
+  What it is: Average total reward across the 5 eval episodes. Same concept as curriculum/avg_reward but measured by a different
+  callback with different episodes.
+
+  Your graph: Extremely volatile, ranging from -170 to +45. The huge swings are because only 5 episodes are used (small sample
+  size) and game outcomes are binary (big win reward vs big loss penalty). The wide variance means this metric is noisy and
+  unreliable as a signal - your curriculum callback's 20-episode average is more trustworthy.
+
+  ---
+  Rollout Metrics
+
+  Term: Rollout - the phase where the agent collects experience by actually playing the game. PPO alternates between rollout
+  (play games, collect data) and training (update neural networks using collected data). Each rollout collects n_steps worth of
+  experience across all parallel envs.
+
+  rollout/ep_len_mean
+
+  What it is: Average episode length across all 4 parallel training environments during rollout. Unlike eval (which uses
+  deterministic actions), rollout uses stochastic actions (the agent samples from its probability distribution, sometimes picking
+   suboptimal actions for exploration).
+
+  Your graph: 55-58, gradually settling. Very similar to eval episode lengths, which tells you the agent's exploratory behavior
+  doesn't dramatically change episode structure.
+
+  rollout/ep_rew_mean
+
+  What it is: Average episode reward during rollout (training games). Since these use stochastic actions, rewards are typically
+  lower than deterministic eval.
+
+  Your graph: Around -15 to -35, trending slightly more negative over time. This is expected because the curriculum advanced -
+  the agent is now facing phase-6 opponents (harder) so it gets lower rewards during training. The rollout reward being negative
+  while curriculum avg_reward is positive is because rollout includes exploration (random suboptimal actions) while curriculum
+  eval is deterministic.
+
+  ---
+  TensorBoard UI Terms
+
+  A few terms you'll see in the legend below each graph:
+
+  - Run: The name of this training run (MaskablePPO_3 = your 4th run, zero-indexed)
+  - Value: The raw (unsmoothed) most recent data point
+  - Smoothed: Exponentially smoothed value (reduces noise to show trends - controlled by the smoothing slider in TensorBoard)
+  - Step: The training timestep (total environment actions taken across all envs) at which the value was recorded
+
+  ---
+  Overall Assessment
+
+  The training is functional but plateaued. The agent mastered construction (98% valid) and blew through phases 0-5, but has been
+   stuck at phase 6 for over 1M steps. The core bottleneck is the value network (explained_variance ~0.25, value_loss ~650) - it
+  can't accurately predict game outcomes in the large size-4 state space, which limits how effectively PPO can improve the
+  policy.
+
+  Options to break through the plateau:
+  1. More timesteps - sometimes 2M isn't enough for size 4; try 5-10M
+  2. Larger network - the default MLP may be too small; try net_arch=[256, 256] or [512, 256]
+  3. Separate value learning rate - sometimes the value network benefits from a higher LR
+  4. Reward normalization - wrapping the env with VecNormalize can help stabilize value estimates
+
+  ❯ here's the thing - this is run with resume - so initially we took 10M steps to get through construction and the first
+  phases - then we updated the training script to let us resume from where it left off and basically start at phase 6 - so
+  blowing through construction and phase 0-5 is misleading since we used the final model from MaskablePPO_2 to start from, I
+   think
+
+● That makes total sense - let me check the full picture across runs.
+
+● Read 1 file (ctrl+o to expand)
+
+● Bash(python -c "
+      from tensorboard.backend.event_processing.event_accumulator import EventAccumulator…)
+  ⎿  === MaskablePPO_1 ===
+       Steps: 2,000 -> 6,294,000 (3147 points)
+       curriculum/opponent_phase: start=0.00 -> end=0.00
+     … +20 lines (ctrl+o to expand)
+
+● That confirms it. Here's the real story across all three runs:
+
+  MaskablePPO_1 (6.3M steps): Got through construction phases 0->8, exited construction mode, but never advanced past opponent
+  phase 0. Ended at 50% win rate.
+
+  MaskablePPO_2 (10M steps): Re-did construction 0->8, then climbed opponent phases 0->6. Also ended at 50% win rate once it hit
+  phase 6.
+
+  MaskablePPO_3 (2M steps so far): Resumed from MaskablePPO_2's final model with --start-opponent-phase 6. Has been at phase 6
+  the entire time, hovering at 45-50% win rate.
+
+  So the real picture is: the agent has been stuck at opponent phase 6 with ~50% win rate for roughly 12M steps combined (the
+  tail end of run 2 + all of run 3). The phase 0-5 "staircase" you see in run 3's graph is just the callback re-evaluating and
+  quickly re-confirming those phases at startup - the agent already knew that material.
+
+  This is a genuine plateau, not an early-training artifact. The agent can build valid size-4 boards reliably (98%+) and beat
+  phases 0-5, but phase 6 opponents are a real wall. The 50% win rate means it's evenly matched - not bad, but it needs 70% to
+  advance.
+
+  Given the high value_loss and low explained_variance persisting across 12M+ total steps, the bottleneck is likely structural
+  (network capacity or reward signal quality) rather than just needing more time.
