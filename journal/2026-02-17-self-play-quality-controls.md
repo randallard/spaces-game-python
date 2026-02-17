@@ -156,3 +156,68 @@ Added `_log_metrics()` to `SelfPlayCallback` that records six metrics every step
 The `mode` chart is the most useful — overlay it with `pool_win_rate` and you can immediately see: "win rate dropped during self-play block 2, recovered during pool recovery, held steady through self-play block 3." No more grepping terminal logs.
 
 TensorBoard groups metrics by prefix, so these automatically appear in their own panel separate from `curriculum/`, `train/`, and `eval/`.
+
+---
+
+## Take 2 Results: Still Destabilizing
+
+The quality-controlled run reached ~880k steps with an encouraging recovery (35% → 65% → 70% win rate). But then the model entered its second self-play block and destabilized again:
+
+| Step | Pool Win Rate | Explained Variance |
+|------|--------------|-------------------|
+| 880k | 70% | 0.55 |
+| 1.648M | 40% | 0.26 |
+| 1.656M | 45% | 0.13 |
+| 1.664M | 30% | 0.19 |
+| 1.672M | 55% | 0.34 |
+
+The explained variance briefly went **negative** (-0.003 at 1.646M) — the value network completely lost predictive power. Episode reward crashed from ~135 to near zero. The quality controls prevented a full death spiral (win rate didn't go to single digits like the first attempt), but the model is oscillating around 40-55% instead of improving.
+
+**Root cause**: the binary block scheduling is too coarse. 500k steps of pure self-play is enough to significantly destabilize the model, and 100k steps of pool recovery (even with the 80% threshold) isn't enough structural change to the approach.
+
+---
+
+## Rethinking: Self-Play as a Curriculum
+
+The insight came from asking: what if we don't need to switch modes at all?
+
+The snapshot pool is naturally ordered by difficulty — chronologically later snapshots come from more trained models. Instead of binary "all self-play" vs "all pool", we should treat the snapshot pool as its own curriculum:
+
+1. Start with just the seed model (easiest self-play opponent)
+2. Gradually include newer snapshots as the model proves it can handle the current set
+3. If performance drops, back up one level (fewer snapshots) instead of abandoning self-play entirely
+4. Only fall back to pool opponents as a last resort — when the model can't even beat the seed
+
+This mirrors how the opponent phase progression already works (simple → one_trap → mixed → super_move → all), but applied to self-play. Each level is only incrementally harder.
+
+### Why Binary Mode-Switching Fails
+
+The current approach has two sudden transitions:
+- **Into self-play**: ratio jumps from 0.0 to 1.0, opponent changes from JSON pool to random snapshots
+- **Into recovery**: ratio jumps from 1.0 to 0.0, opponent changes back to JSON pool
+
+Each transition is a distribution shift. The value network was calibrated for one opponent type and suddenly faces another. The progressive curriculum eliminates these sharp transitions — the opponent distribution changes gradually.
+
+---
+
+## Refactoring Plan
+
+The training script has grown to 1,053 lines. Before implementing the self-play curriculum, we're extracting the callbacks into a proper module structure. This also makes it trivial to add new board sizes — just create `boards/sizeN/` with pool files and run `--size N`.
+
+Full plan: [plans/2026-02-17-refactor-training-self-play-curriculum.md](../plans/2026-02-17-refactor-training-self-play-curriculum.md)
+
+Key changes:
+- Extract `OpponentProgressionCallback` → `spaces_game/callbacks/opponent_progression.py`
+- Extract pool utilities → `spaces_game/callbacks/pool_utils.py`
+- Rewrite `SelfPlayCallback` → `SelfPlayCurriculumCallback` with progressive window algorithm
+- Slim `train_simultaneous.py` from 1,053 to ~250-300 lines
+
+### Self-Play Curriculum Parameters
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `--advance-threshold` | 0.70 | Pool win rate to advance window level |
+| `--backtrack-threshold` | 0.55 | Pool win rate to back up one level |
+| `--min-steps-per-level` | 50,000 | Minimum steps before level advancement |
+| `--recovery-win-rate` | 0.70 | Win rate to exit pool recovery (last resort) |
+| `--snapshot-win-rate` | (derived) | Quality gate for snapshot creation |
