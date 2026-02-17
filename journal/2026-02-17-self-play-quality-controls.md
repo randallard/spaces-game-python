@@ -133,3 +133,26 @@ Three lessons keep recurring across this project:
 2. **Agents will find shortcuts.** If there's a way for bad models to pollute the training signal, they will. Unconditional snapshotting is the self-play equivalent of the validation bug from Feb 5 — the system assumed quality that wasn't there.
 
 3. **Learning benefits from consistency.** The longer self-play blocks (500k) are the same principle as block scheduling itself: sustained exposure to one type of challenge, then sustained recovery, rather than rapid switching that prevents learning in either direction.
+
+---
+
+## TensorBoard Observability for Self-Play
+
+One thing missing from the block scheduling implementation was visibility. The `SelfPlayCallback` printed transitions to stdout, but TensorBoard — the primary monitoring tool — had no idea self-play existed. The `curriculum/` metrics showed win rate and phase, but there was no way to correlate performance changes with self-play mode transitions without scrolling through terminal output.
+
+### New `self_play/` TensorBoard Panel
+
+Added `_log_metrics()` to `SelfPlayCallback` that records six metrics every step:
+
+| Metric | What it shows |
+|--------|--------------|
+| `self_play/mode` | 1.0 during self-play blocks, 0.0 during recovery — square wave showing block transitions |
+| `self_play/pool_win_rate` | Win rate against pool opponents (same data as `curriculum/game_win_rate` but always in the self-play panel) |
+| `self_play/block_count` | Cumulative self-play blocks completed |
+| `self_play/recovery_count` | Cumulative recovery periods triggered |
+| `self_play/pool_snapshots` | Number of snapshots currently in the opponent pool |
+| `self_play/steps_in_block` | Progress through current block/recovery period (resets at transitions) |
+
+The `mode` chart is the most useful — overlay it with `pool_win_rate` and you can immediately see: "win rate dropped during self-play block 2, recovered during pool recovery, held steady through self-play block 3." No more grepping terminal logs.
+
+TensorBoard groups metrics by prefix, so these automatically appear in their own panel separate from `curriculum/`, `train/`, and `eval/`.

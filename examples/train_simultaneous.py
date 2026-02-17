@@ -441,6 +441,9 @@ class SelfPlayCallback(BaseCallback):
         # Check for skill milestone checkpoints from phase callback's eval
         self._check_skill_milestones()
 
+        # Log self-play metrics to TensorBoard
+        self._log_metrics()
+
         return True
 
     def _check_block_transition(self):
@@ -489,6 +492,21 @@ class SelfPlayCallback(BaseCallback):
                 elif self.verbose >= 1 and steps_in_block % self.recovery_steps == 0:
                     print(f"\n  SELF-PLAY: Recovery {self._recovery_count} extending. "
                           f"Pool win rate {pool_win_rate:.1%} < {self.recovery_win_rate:.1%}")
+
+    def _log_metrics(self):
+        """Log self-play state to TensorBoard."""
+        if self.logger is None:
+            return
+        # Mode: 1.0 = self-play block, 0.0 = pool recovery
+        self.logger.record("self_play/mode", 1.0 if self._in_self_play_block else 0.0)
+        self.logger.record("self_play/block_count", self._block_count)
+        self.logger.record("self_play/recovery_count", self._recovery_count)
+        self.logger.record("self_play/pool_snapshots", len(self.snapshot_paths))
+        pool_win_rate = self._get_latest_pool_win_rate()
+        self.logger.record("self_play/pool_win_rate", pool_win_rate)
+        # Steps into current block/recovery
+        steps_in_block = (self.n_calls - self._block_start_step) * self.n_envs
+        self.logger.record("self_play/steps_in_block", steps_in_block)
 
     def _get_latest_pool_win_rate(self) -> float:
         """Get the latest pool win rate from the phase callback."""

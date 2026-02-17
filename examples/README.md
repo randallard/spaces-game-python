@@ -1,7 +1,7 @@
 # Spaces Game Examples
 
 > **Note:** This README covers Stage 0 tools (`random_agent.py`, `train_basic.py`, `evaluate_agent.py`). For current training and play scripts, see [TRAINING_PLAN.md](../TRAINING_PLAN.md):
-> - `train_simultaneous.py` — Stage 3 (full reveal) and Stage 4 (fog of war) training with opponent curriculum, self-play, and difficulty checkpoints. Use `--fog` for Stage 4.
+> - `train_simultaneous.py` — Stage 3 (full reveal) and Stage 4 (fog of war) training with opponent curriculum, self-play block scheduling, and difficulty checkpoints. Use `--fog` for Stage 4. Self-play quality controls: `--recovery-win-rate`, `--snapshot-win-rate`. TensorBoard `self_play/` panel shows mode transitions, pool win rate, and snapshot counts.
 > - `play_against_agent.py` — Interactive play with difficulty selection, fog of war display, multi-round games
 > - `train_construction.py` — Stage 1 counter-play training
 
