@@ -3,7 +3,7 @@
 import os
 import shutil
 import numpy as np
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, Dict, TYPE_CHECKING
 from stable_baselines3.common.callbacks import BaseCallback
 
 if TYPE_CHECKING:
@@ -54,6 +54,12 @@ class SelfPlayCurriculumCallback(BaseCallback):
         recovery_win_rate: float = 0.70,
         snapshot_win_rate: Optional[float] = None,
         seed_model_path: Optional[str] = None,
+        board_size: int = 2,
+        opponent_pools: Optional[List[str]] = None,
+        phase_map: Optional[Dict[int, List[int]]] = None,
+        use_fog: bool = False,
+        sp_eval_episodes: int = 10,
+        sp_eval_freq: int = 2000,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -73,6 +79,10 @@ class SelfPlayCurriculumCallback(BaseCallback):
         else:
             self.snapshot_win_rate = (backtrack_threshold + advance_threshold) / 2.0
         self.seed_model_path = seed_model_path
+        self.board_size = board_size
+        self.use_fog = use_fog
+        self.sp_eval_episodes = sp_eval_episodes
+        self.sp_eval_freq = sp_eval_freq
 
         # Snapshot pool (ordered chronologically)
         self.snapshot_paths: List[str] = []
@@ -80,6 +90,8 @@ class SelfPlayCurriculumCallback(BaseCallback):
         self._last_snapshot_step = 0
         self._saved_tiers: set = set()
         self._best_win_rate = 0.0
+        self._last_sp_eval_step = 0
+        self._sp_win_rate: Optional[float] = None  # Latest self-play eval win rate
 
         # Window level state
         self.window_level = 0
@@ -90,6 +102,17 @@ class SelfPlayCurriculumCallback(BaseCallback):
         # Create snapshot directory
         self.snapshot_dir = os.path.join(output_dir, "opponent_pool")
         os.makedirs(self.snapshot_dir, exist_ok=True)
+
+        # Dedicated eval env for self-play evaluation
+        from ..simultaneous_play_env import SimultaneousPlayEnv
+        max_construction_steps = board_size * 10
+        self._eval_env = SimultaneousPlayEnv(
+            board_size=board_size,
+            opponent_pools=opponent_pools,
+            max_construction_steps=max_construction_steps,
+            phase_map=phase_map,
+            use_fog=use_fog,
+        )
 
         # Seed pool with initial converged model (never pruned)
         self._seed_path: Optional[str] = None
@@ -121,6 +144,11 @@ class SelfPlayCurriculumCallback(BaseCallback):
         if self.n_calls - self._last_snapshot_step >= self.snapshot_freq:
             self._take_snapshot()
 
+        # Periodic self-play evaluation (separate from pool eval)
+        if self.n_calls - self._last_sp_eval_step >= self.sp_eval_freq:
+            self._evaluate_against_snapshots()
+            self._last_sp_eval_step = self.n_calls
+
         # Check level transitions
         self._check_level_transition()
 
@@ -133,24 +161,31 @@ class SelfPlayCurriculumCallback(BaseCallback):
         return True
 
     def _check_level_transition(self):
-        """Check if we should advance, backtrack, or enter/exit recovery."""
+        """Check if we should advance, backtrack, or enter/exit recovery.
+
+        Uses self-play eval win rate for level advance/backtrack decisions,
+        and pool win rate for recovery enter/exit (since recovery means
+        switching back to pool opponents).
+        """
         pool_win_rate = self._get_latest_pool_win_rate()
+        # Use self-play eval for level decisions, fall back to pool if no sp eval yet
+        level_win_rate = self._sp_win_rate if self._sp_win_rate is not None else pool_win_rate
         steps_at_level = (self.n_calls - self._level_start_step) * self.n_envs
 
         if self._in_recovery:
-            # In pool recovery — wait for win rate to recover
+            # In pool recovery — use pool win rate (that's what we're playing against)
             if pool_win_rate >= self.recovery_win_rate:
                 self._in_recovery = False
                 self._level_start_step = self.n_calls
                 self.window_level = 0
                 self._activate_self_play()
                 if self.verbose >= 1:
-                    print(f"\n  SELF-PLAY: Recovery complete (win rate {pool_win_rate:.1%}). "
+                    print(f"\n  SELF-PLAY: Recovery complete (pool WR {pool_win_rate:.1%}). "
                           f"Resuming at level 0")
             return
 
         # Check backtrack condition (requires minimum steps to avoid noisy eval knee-jerks)
-        if (pool_win_rate < self.backtrack_threshold and
+        if (level_win_rate < self.backtrack_threshold and
                 steps_at_level >= self.min_steps_per_level):
             if self.window_level > 0:
                 self.window_level -= 1
@@ -158,7 +193,7 @@ class SelfPlayCurriculumCallback(BaseCallback):
                 self._assign_opponents()
                 if self.verbose >= 1:
                     print(f"\n  SELF-PLAY: Backtrack to level {self.window_level} "
-                          f"(win rate {pool_win_rate:.1%} < {self.backtrack_threshold:.1%})")
+                          f"(SP eval {level_win_rate:.1%} < {self.backtrack_threshold:.1%})")
             else:
                 # Already at level 0 and still failing — enter pool recovery
                 self._in_recovery = True
@@ -166,12 +201,12 @@ class SelfPlayCurriculumCallback(BaseCallback):
                 self._set_ratio(0.0)
                 if self.verbose >= 1:
                     print(f"\n  SELF-PLAY: Entering pool recovery "
-                          f"(win rate {pool_win_rate:.1%} < {self.backtrack_threshold:.1%})")
+                          f"(SP eval {level_win_rate:.1%} < {self.backtrack_threshold:.1%})")
             return
 
         # Check advance condition (requires minimum steps at this level)
         max_possible_level = len(self.snapshot_paths)
-        if (pool_win_rate >= self.advance_threshold and
+        if (level_win_rate >= self.advance_threshold and
                 steps_at_level >= self.min_steps_per_level and
                 self.window_level < max_possible_level):
             self.window_level += 1
@@ -180,8 +215,55 @@ class SelfPlayCurriculumCallback(BaseCallback):
             self._assign_opponents()
             if self.verbose >= 1:
                 print(f"\n  SELF-PLAY: Advanced to level {self.window_level} "
-                      f"(win rate {pool_win_rate:.1%} >= {self.advance_threshold:.1%}, "
+                      f"(SP eval {level_win_rate:.1%} >= {self.advance_threshold:.1%}, "
                       f"{len(self.snapshot_paths)} snapshots)")
+
+    def _evaluate_against_snapshots(self):
+        """Run evaluation games against current window of snapshot opponents.
+
+        This gives a direct signal for how the agent performs against self-play
+        opponents, separate from the pool eval used for phase progression.
+        """
+        # Build candidate list matching _assign_opponents logic
+        candidates = []
+        if self._seed_path:
+            candidates.append(self._seed_path)
+        window_end = min(self.window_level, len(self.snapshot_paths))
+        candidates.extend(self.snapshot_paths[:window_end])
+
+        if not candidates:
+            return  # No opponents to evaluate against
+
+        from sb3_contrib import MaskablePPO
+
+        game_wins = 0
+        for ep in range(self.sp_eval_episodes):
+            # Pick a random opponent from the window
+            opp_path = candidates[np.random.randint(len(candidates))]
+
+            # Configure eval env to use this snapshot opponent
+            self._eval_env.set_opponent_model(opp_path)
+            self._eval_env.set_self_play_ratio(1.0)
+
+            obs, info = self._eval_env.reset(seed=42 + ep)
+            done = False
+
+            while not done:
+                action_masks = self._eval_env.action_masks()
+                action, _ = self.model.predict(
+                    obs, deterministic=True, action_masks=action_masks,
+                )
+                obs, reward, terminated, truncated, info = self._eval_env.step(action)
+                done = terminated or truncated
+
+            if info.get("game_winner") == "agent":
+                game_wins += 1
+
+        self._sp_win_rate = game_wins / self.sp_eval_episodes
+
+        if self.verbose >= 1:
+            print(f"  SELF-PLAY EVAL: {self._sp_win_rate:.0%} vs window level {self.window_level} "
+                  f"({len(candidates)} opponents, {self.sp_eval_episodes} games)")
 
     def _activate_self_play(self):
         """Switch from pool opponents to self-play at current window level."""
@@ -198,6 +280,8 @@ class SelfPlayCurriculumCallback(BaseCallback):
         self.logger.record("self_play/pool_snapshots", len(self.snapshot_paths))
         pool_win_rate = self._get_latest_pool_win_rate()
         self.logger.record("self_play/pool_win_rate", pool_win_rate)
+        if self._sp_win_rate is not None:
+            self.logger.record("self_play/sp_eval_win_rate", self._sp_win_rate)
 
     def _get_latest_pool_win_rate(self) -> float:
         """Get the latest pool win rate from the phase callback."""

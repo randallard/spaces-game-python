@@ -286,9 +286,15 @@ def train(
             recovery_win_rate=recovery_win_rate,
             snapshot_win_rate=snapshot_win_rate,
             seed_model_path=resume_from,
+            board_size=board_size,
+            opponent_pools=opponent_pools,
+            phase_map=phase_map,
+            use_fog=use_fog,
+            sp_eval_freq=eval_freq,
             verbose=1,
         )
         callbacks.append(self_play_callback)
+        phase_callback.self_play_callback = self_play_callback
 
     if discord_webhook:
         discord_callback = DiscordNotifierCallback(

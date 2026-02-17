@@ -221,3 +221,152 @@ Key changes:
 | `--min-steps-per-level` | 50,000 | Minimum steps before level advancement |
 | `--recovery-win-rate` | 0.70 | Win rate to exit pool recovery (last resort) |
 | `--snapshot-win-rate` | (derived) | Quality gate for snapshot creation |
+
+---
+
+## Take 3: Progressive Window Curriculum (Feb 17)
+
+After the refactoring, take 3 launched with the new `SelfPlayCurriculumCallback`:
+
+```bash
+python examples/train_simultaneous.py --size 3 --fog --self-play \
+    --warmup-steps 0 \
+    --resume models/size3/stage4/best/best_model.zip \
+    --timesteps 7.5M \
+    --advance-threshold 0.70 \
+    --backtrack-threshold 0.55 \
+    --min-steps-per-level 50k
+```
+
+### Results: Level Oscillation
+
+The progressive curriculum was a clear improvement over binary block scheduling — no death spiral, no recovery mode entered. But a new pattern emerged: **level oscillation**.
+
+| Step | Window Level | Win Rate | Event |
+|------|-------------|----------|-------|
+| 57K | 0 → 1 | 70%+ | Advanced |
+| 74K | 1 → 0 | <55% | Backtracked |
+| 131K | 0 → 1 | 70%+ | Advanced |
+| 201K | 1 → 2 | 70%+ | Advanced (max level!) |
+| 209K | 2 → 0 | <55% | Backtracked twice |
+| 352K | 0 → 1 | 70%+ | Advanced |
+| 360K | 1 → 0 | <55% | Backtracked |
+| 498K | 0 → 1 | 70%+ | Advanced |
+| 553K | 1 → 2 | 70%+ | Advanced (max level again!) |
+| 586K | 2 → 0 | <55% | Backtracked twice |
+
+The agent reached level 2 three times and got knocked back to 0 each time. Stopped at 660K steps with 85% pool win rate but level 0.
+
+### Root Cause: No Min-Step Guard on Backtracking
+
+The `min_steps_per_level` of 50K only applied to **advancing**. Backtracking was immediate — a single bad eval below 0.55 triggered it. With fog's noisy evaluations (win rates swing 45-85% between evals), one unlucky eval right after advancing caused instant retreat.
+
+The level 2 → 0 cascades were particularly destructive: one bad eval at level 2 → backtrack to 1 → still in the same eval window → another bad eval → backtrack to 0. Two levels lost from what might have been transient noise.
+
+---
+
+## Take 4: Tuned Thresholds + Backtrack Guard (Feb 17)
+
+Three changes for take 4:
+
+1. **Wider threshold gap**: advance at 0.75, backtrack at 0.45 (was 0.70/0.55). The 0.45 backtrack is very hard to hit from noise alone — if the agent is at 0.45 against pool opponents, it's genuinely struggling.
+
+2. **Min-step guard on backtracking**: Same `min_steps_per_level` (50K) now required before backtracking too. Prevents knee-jerk retreats from a single bad eval.
+
+3. **Discord notifications**: New `DiscordNotifierCallback` for remote monitoring. Sends milestone alerts (phase advance, level changes, recovery) and periodic check-ins with trend analysis.
+
+```bash
+python examples/train_simultaneous.py --size 3 --fog --self-play \
+    --resume models/size3/stage4/ppo_stage3_660000_steps.zip \
+    --timesteps 10M \
+    --warmup-steps 0 \
+    --advance-threshold 0.75 \
+    --backtrack-threshold 0.45 \
+    --min-steps-per-level 50k \
+    --discord-webhook "$DISCORD_WEBHOOK" \
+    --discord-check-in 60
+```
+
+### Early Results (650K steps)
+
+The run started with a value network recalibration problem. Resuming from take 3's checkpoint (trained at phase 6) but with curriculum reset to phase 0 caused a reward distribution mismatch:
+
+| Step Range | Win Rate | Explained Variance | Phase |
+|-----------|----------|-------------------|-------|
+| 0-100K | 0-25% | -0.35 → 0.23 | 0-1 |
+| 100-230K | 75-100% | 0.19-0.42 | 1-4 |
+| 230-270K | 50-80% | 0.18-0.27 | 4-5 |
+| 272K | **15%** | 0.17 | Backtrack 2→1→0 |
+| 272-450K | 5-40% | 0.31-0.58 | Grinding at level 0 |
+| 450-570K | 35-70% | 0.33-0.63 | Slow recovery |
+| 560K | 65% | 0.33 | Phase 6 cleared |
+| 570-650K | 30-85% | 0.17-0.39 | Volatile |
+
+The backtrack at 272K with the min-step guard means the agent was below 0.45 for a sustained period — not noise. The value network (explained variance 0.17-0.20 recently) is struggling to predict returns accurately.
+
+### Assessment
+
+Take 4 hasn't collapsed like takes 1-2, and the backtrack guard prevented oscillation. But the core challenge remains: **the value network can't keep up with the non-stationarity of fog + self-play**. At 650K/10M steps (6.5%), explained variance is low and win rate is volatile.
+
+### Discussion: What Could Improve Learning?
+
+Several approaches under consideration:
+
+**1. Don't reset curriculum on resume.** The biggest early destabilizer was forcing a phase-6-trained model back through phases 0-5. The model's value estimates were calibrated for hard opponents, then it faced trivial ones — reward distribution shift. Using `--start-opponent-phase 6` on resume would skip re-clearing phases.
+
+**2. Lower learning rate for resumed self-play.** The value network from take 3 was well-calibrated (0.83-0.91 explained variance). Take 4's 3e-4 learning rate may be too aggressive — it's overwriting good value estimates too fast. Try 1e-4 to give the network more time to adapt incrementally.
+
+**3. Larger rollout buffer.** With `--n-steps 2048` across 4 envs (512 per env), each update is based on relatively few episodes. Fog makes individual episodes noisy, so more data per update would reduce variance. Try `--n-steps 4096` or `--n-steps 8192`.
+
+**4. Separate pool eval from self-play eval.** Currently the same `game_win_rate` metric drives both phase advancement and self-play level decisions. But the eval always runs against the current phase's pool opponents. A dedicated self-play evaluation (against the current window of snapshots) would give better signal for level transitions.
+
+**5. Entropy coefficient tuning.** Currently 0.05. With fog + self-play, the optimal strategy space is wider — the agent needs to explore more diverse board constructions to handle varied opponents. Try 0.1 for more exploration.
+
+---
+
+## Take 5: All Five Improvements (Feb 17)
+
+Implementing all five changes simultaneously:
+
+### Changes Made
+
+1. **Skip curriculum on resume** (`--start-opponent-phase 6`): The model already cleared all 6 phases. Forcing it back to phase 0 caused reward distribution mismatch and value network recalibration. Now starts at the final phase.
+
+2. **Lower learning rate** (`--learning-rate 1e-4`): Take 3 had explained variance 0.83-0.91. Take 4's 3e-4 overwrote those calibrated estimates too aggressively. 1e-4 gives the network time to adapt incrementally.
+
+3. **Larger rollout buffer** (`--n-steps 4096`): Doubles the data per PPO update (1024 per env instead of 512). With fog's noisy evaluations, more data per update reduces gradient variance.
+
+4. **Separate self-play evaluation**: New `_evaluate_against_snapshots()` method in `SelfPlayCurriculumCallback`. Runs games against the current snapshot window every `eval_freq` steps. Level advance/backtrack decisions now use this self-play win rate instead of pool win rate. Pool win rate still drives phase progression and recovery decisions. Logged as `self_play/sp_eval_win_rate` in TensorBoard.
+
+5. **Higher entropy** (`--ent-coef 0.1`): Doubles exploration. With fog + self-play, the agent needs to discover more diverse strategies to handle varied opponents.
+
+### Additional fixes from earlier in the session
+
+- **Min-step guard on backtracking**: Both advance and backtrack now require `min_steps_per_level` before transitioning. Prevents knee-jerk retreats from noisy evals.
+- **Wider threshold gap**: Advance at 0.75, backtrack at 0.45 (was 0.70/0.55).
+- **Console self-play status**: Eval printout now shows current level, max level, steps at level, and snapshot count.
+- **Discord notifications**: Milestone alerts + periodic check-ins with trend analysis.
+
+```bash
+python examples/train_simultaneous.py \
+    --size 3 --fog --self-play \
+    --resume models/size3/stage4/ppo_stage3_660000_steps.zip \
+    --start-opponent-phase 6 \
+    --timesteps 10M \
+    --warmup-steps 0 \
+    --learning-rate 1e-4 \
+    --ent-coef 0.1 \
+    --n-steps 4096 \
+    --advance-threshold 0.75 \
+    --backtrack-threshold 0.45 \
+    --min-steps-per-level 50k \
+    --discord-webhook "$DISCORD_WEBHOOK" \
+    --discord-check-in 60
+```
+
+### What to Watch
+
+- **Explained variance**: Should stay higher than take 4's 0.17 thanks to lower LR and skipped curriculum reset. Target >0.50 sustained.
+- **`self_play/sp_eval_win_rate`**: New TensorBoard metric showing direct performance against snapshot opponents. This drives level transitions now.
+- **Level stability**: With wider thresholds + min-step guard + separate eval signal, levels should be much more stable. If the agent reaches level 2 it should stay there or progress.
+- **Discord**: Watch for startup confirmation line: `DISCORD: Sent 'Training Started...'`. If it doesn't appear, the webhook URL wasn't passed.

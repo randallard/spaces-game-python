@@ -391,7 +391,8 @@ spaces_game/simultaneous_play_env.py
 - Stage 4 fog + self-play take 1 (block scheduling): Destabilized, ~46% win rate death spiral
 - Stage 4 fog + self-play take 2 (quality controls): Partially recovered but oscillated 40-55%
 - Stage 4 fog + self-play take 3 (progressive window): Stopped at 660K/7.5M — level oscillation (hit level 2 three times, backtracked each time due to no min-step guard on backtracking)
-- Stage 4 fog + self-play take 4 (tuned thresholds): **Running** (Feb 17) — 10M steps, resumed from take 3 checkpoint (660K). Changes: advance 0.75, backtrack 0.45, min-step guard on backtracking, Discord notifications
+- Stage 4 fog + self-play take 4 (tuned thresholds): Stopped at 650K/10M — value network recalibration from curriculum reset (EV 0.17), volatile WR 30-85%
+- Stage 4 fog + self-play take 5 (all improvements): **Running** (Feb 17) — 10M steps, resumed from take 3 at 660K. Changes: skip curriculum reset, LR 1e-4, n-steps 4096, ent-coef 0.1, separate SP eval, Discord notifications
 
 ### Size 4 (Feb 2026)
 - Stage 3 pool-only: 2M steps, all 7 phases cleared, 100% valid rate

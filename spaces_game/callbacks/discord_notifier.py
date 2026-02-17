@@ -72,10 +72,16 @@ class DiscordNotifierCallback(BaseCallback):
         # Periodic check-in timer
         self._last_check_in_time: float = 0.0
         self._training_start_time: float = 0.0
+        self._disabled: bool = False
 
     def _on_training_start(self) -> None:
         self._training_start_time = time.time()
         self._last_check_in_time = time.time()
+
+        if self.verbose >= 1:
+            url_preview = self.webhook_url[:50] + "..." if len(self.webhook_url) > 50 else self.webhook_url
+            print(f"\n  DISCORD: Notifications enabled (webhook: {url_preview})")
+            print(f"  DISCORD: Check-in interval: {self.check_in_minutes} minutes")
 
         # Initialize edge detection from current state
         if self.phase_callback is not None:
@@ -84,14 +90,22 @@ class DiscordNotifierCallback(BaseCallback):
             self._prev_window_level = self.self_play_callback.window_level
             self._prev_in_recovery = self.self_play_callback._in_recovery
 
-        # Send training started notification
+        # Send training started notification — prompt if webhook fails
         label = self._training_label()
         embed = self._make_embed(
             title=f"Training Started — {label}",
             description=f"Target: {_format_steps(self.total_timesteps)} steps",
             color=self.COLOR_INFO,
         )
-        self._send_webhook(embed)
+        if not self._send_webhook(embed):
+            print("\n  DISCORD: Webhook test failed. Notifications will not work.")
+            print("  DISCORD: Check your webhook URL — it may be expired or invalid.")
+            response = input("  Continue training without Discord notifications? [y/N] ").strip().lower()
+            if response not in ("y", "yes"):
+                print("  Aborting training.")
+                raise SystemExit(1)
+            print("  Continuing without Discord notifications.\n")
+            self._disabled = True
 
     def _on_step(self) -> bool:
         # Check milestones (edge detection)
@@ -381,19 +395,29 @@ class DiscordNotifierCallback(BaseCallback):
             embed["fields"] = fields
         return embed
 
-    def _send_webhook(self, embed: dict) -> None:
-        """POST an embed to the Discord webhook. Failures are logged but don't stop training."""
+    def _send_webhook(self, embed: dict) -> bool:
+        """POST an embed to the Discord webhook. Failures are logged but don't stop training.
+
+        Returns True on success, False on failure.
+        """
+        if self._disabled:
+            return False
         payload = json.dumps({"embeds": [embed]}).encode("utf-8")
         req = urllib.request.Request(
             self.webhook_url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "SpacesGameTrainingMonitor/1.0",
+            },
             method="POST",
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
-                if self.verbose >= 2:
+                if self.verbose >= 1:
                     print(f"  DISCORD: Sent '{embed.get('title', '')}' (status {resp.status})")
+                return True
         except Exception as e:
             if self.verbose >= 1:
                 print(f"  DISCORD: Failed to send webhook: {e}")
+            return False

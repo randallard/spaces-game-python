@@ -31,9 +31,11 @@ class OpponentProgressionCallback(BaseCallback):
         phase_map: Optional[Dict[int, List[int]]] = None,
         start_opponent_phase: Optional[int] = None,
         use_fog: bool = False,
+        self_play_callback=None,
         verbose: int = 1,
     ):
         super().__init__(verbose)
+        self.self_play_callback = self_play_callback
         self.eval_freq = eval_freq
         self.eval_episodes = eval_episodes
         self.win_rate_threshold = win_rate_threshold
@@ -117,6 +119,15 @@ class OpponentProgressionCallback(BaseCallback):
             print(f"  Game wins:  {game_win_rate:.1%} ({game_wins}W/{game_losses}L/{ties}T)")
             print(f"  Valid rate: {valid_rate:.1%} ({total_rounds_valid}/{total_rounds} rounds)")
             print(f"  Avg reward: {avg_reward:.2f}")
+            if self.self_play_callback is not None:
+                sp = self.self_play_callback
+                level_info = f"  Self-play:  level {sp.window_level} (max reached: {sp.max_level})"
+                if sp._in_recovery:
+                    level_info += " [IN RECOVERY]"
+                steps_at_level = (self.n_calls - sp._level_start_step) * (sp.n_envs if hasattr(sp, 'n_envs') else 4)
+                level_info += f", {steps_at_level:,} steps at current level"
+                print(level_info)
+                print(f"  Snapshots:  {len(sp.snapshot_paths)} in pool")
 
         # Advance opponent phase if thresholds met
         steps_at_phase = self.n_calls - self._phase_start_step
