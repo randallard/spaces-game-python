@@ -367,6 +367,9 @@ class SelfPlayCallback(BaseCallback):
         block_steps: int = 200_000,
         recovery_steps: int = 100_000,
         min_pool_win_rate: float = 0.60,
+        recovery_win_rate: float = 0.70,
+        snapshot_win_rate: Optional[float] = None,
+        seed_model_path: Optional[str] = None,
         verbose: int = 1,
     ):
         super().__init__(verbose)
@@ -380,6 +383,13 @@ class SelfPlayCallback(BaseCallback):
         self.block_steps = block_steps
         self.recovery_steps = recovery_steps
         self.min_pool_win_rate = min_pool_win_rate
+        self.recovery_win_rate = recovery_win_rate
+        # Quality gate: default to midpoint of min_pool_win_rate and recovery_win_rate
+        if snapshot_win_rate is not None:
+            self.snapshot_win_rate = snapshot_win_rate
+        else:
+            self.snapshot_win_rate = (min_pool_win_rate + recovery_win_rate) / 2.0
+        self.seed_model_path = seed_model_path
         self.snapshot_paths: List[str] = []
         self._warmup_complete = False
         self._last_snapshot_step = 0
@@ -395,6 +405,15 @@ class SelfPlayCallback(BaseCallback):
         # Create snapshot directory
         self.snapshot_dir = os.path.join(output_dir, "opponent_pool")
         os.makedirs(self.snapshot_dir, exist_ok=True)
+
+        # Seed pool with initial converged model (never pruned)
+        self._seed_path: Optional[str] = None
+        if seed_model_path and os.path.exists(seed_model_path):
+            import shutil
+            self._seed_path = os.path.join(self.snapshot_dir, "seed_model.zip")
+            shutil.copy2(seed_model_path, self._seed_path)
+            if self.verbose >= 1:
+                print(f"  SELF-PLAY: Seeded pool with {seed_model_path}")
 
     def _on_step(self) -> bool:
         total_steps = self.n_calls * self.n_envs
@@ -454,18 +473,22 @@ class SelfPlayCallback(BaseCallback):
                         print(f"  SELF-PLAY: Starting self-play block {self._block_count + 1} "
                               f"({self.block_steps:,} steps)")
         else:
-            # In pool recovery
+            # In pool recovery — require minimum steps AND win rate threshold
             if steps_in_block >= self.recovery_steps:
-                # Recovery done — back to self-play
-                self._in_self_play_block = True
-                self._block_start_step = self.n_calls
-                self._set_ratio(1.0)
-                if self.verbose >= 1:
-                    pool_win_rate = self._get_latest_pool_win_rate()
-                    print(f"\n  SELF-PLAY: Recovery {self._recovery_count} done. "
-                          f"Pool win rate now {pool_win_rate:.1%}")
-                    print(f"  SELF-PLAY: Starting self-play block {self._block_count + 1} "
-                          f"({self.block_steps:,} steps)")
+                pool_win_rate = self._get_latest_pool_win_rate()
+                if pool_win_rate >= self.recovery_win_rate:
+                    # Recovery done — back to self-play
+                    self._in_self_play_block = True
+                    self._block_start_step = self.n_calls
+                    self._set_ratio(1.0)
+                    if self.verbose >= 1:
+                        print(f"\n  SELF-PLAY: Recovery {self._recovery_count} done. "
+                              f"Pool win rate {pool_win_rate:.1%} >= {self.recovery_win_rate:.1%}")
+                        print(f"  SELF-PLAY: Starting self-play block {self._block_count + 1} "
+                              f"({self.block_steps:,} steps)")
+                elif self.verbose >= 1 and steps_in_block % self.recovery_steps == 0:
+                    print(f"\n  SELF-PLAY: Recovery {self._recovery_count} extending. "
+                          f"Pool win rate {pool_win_rate:.1%} < {self.recovery_win_rate:.1%}")
 
     def _get_latest_pool_win_rate(self) -> float:
         """Get the latest pool win rate from the phase callback."""
@@ -485,8 +508,20 @@ class SelfPlayCallback(BaseCallback):
                     print(f"  Warning: Could not set ratio for env {i}: {e}")
 
     def _take_snapshot(self):
-        """Save model snapshot and assign to training envs."""
+        """Save model snapshot if quality gate passes, and assign to training envs."""
         self._last_snapshot_step = self.n_calls
+
+        # Quality gate: only snapshot if pool win rate is above threshold
+        pool_win_rate = self._get_latest_pool_win_rate()
+        if pool_win_rate < self.snapshot_win_rate:
+            if self.verbose >= 1:
+                mode = "SELF-PLAY" if self._in_self_play_block else "RECOVERY"
+                print(f"  {mode}: Snapshot skipped — pool win rate "
+                      f"{pool_win_rate:.1%} < {self.snapshot_win_rate:.1%}")
+            # Still assign opponents from existing pool
+            if self._in_self_play_block:
+                self._assign_opponents()
+            return
 
         # Save snapshot
         snapshot_path = os.path.join(
@@ -495,15 +530,16 @@ class SelfPlayCallback(BaseCallback):
         self.model.save(snapshot_path)
         self.snapshot_paths.append(snapshot_path)
 
-        # Prune oldest
+        # Prune oldest (never prune seed model)
         while len(self.snapshot_paths) > self.pool_size:
             old_path = self.snapshot_paths.pop(0)
-            if os.path.exists(old_path):
+            if old_path != self._seed_path and os.path.exists(old_path):
                 os.remove(old_path)
 
         if self.verbose >= 1:
             mode = "SELF-PLAY" if self._in_self_play_block else "RECOVERY"
-            print(f"  {mode}: Snapshot saved ({len(self.snapshot_paths)} in pool)")
+            print(f"  {mode}: Snapshot saved ({len(self.snapshot_paths)} in pool, "
+                  f"win rate {pool_win_rate:.1%})")
 
         # Assign random snapshots to training envs (only during self-play blocks)
         if self._in_self_play_block:
@@ -511,11 +547,14 @@ class SelfPlayCallback(BaseCallback):
 
     def _assign_opponents(self):
         """Assign a random snapshot to each training env."""
-        if not self.snapshot_paths:
+        candidates = list(self.snapshot_paths)
+        if self._seed_path and self._seed_path not in candidates:
+            candidates.append(self._seed_path)
+        if not candidates:
             return
 
         for i in range(self.n_envs):
-            path = self.snapshot_paths[np.random.randint(len(self.snapshot_paths))]
+            path = candidates[np.random.randint(len(candidates))]
             try:
                 self.training_env.env_method(
                     "set_opponent_model", path, indices=[i],
@@ -631,6 +670,8 @@ def train(
     self_play_block_steps: int = 200_000,
     pool_recovery_steps: int = 100_000,
     min_pool_win_rate: float = 0.60,
+    recovery_win_rate: float = 0.70,
+    snapshot_win_rate: Optional[float] = None,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -684,8 +725,13 @@ def train(
         print(f"  Pool size:       {pool_size}")
         print(f"  Warmup steps:    {warmup_steps:,}")
         print(f"  Block steps:     {self_play_block_steps:,} (pure self-play per block)")
-        print(f"  Recovery steps:  {pool_recovery_steps:,} (pool-only if degraded)")
-        print(f"  Min pool WR:     {min_pool_win_rate:.0%} (threshold for recovery)")
+        print(f"  Recovery steps:  {pool_recovery_steps:,} (min pool-only before re-eval)")
+        print(f"  Min pool WR:     {min_pool_win_rate:.0%} (triggers recovery)")
+        print(f"  Recovery WR:     {recovery_win_rate:.0%} (required to exit recovery)")
+        effective_snap_wr = snapshot_win_rate if snapshot_win_rate is not None else (min_pool_win_rate + recovery_win_rate) / 2.0
+        print(f"  Snapshot WR:     {effective_snap_wr:.0%} (quality gate for snapshots)")
+        if resume_from:
+            print(f"  Seed model:      {resume_from} (permanent pool member)")
     if resume_from:
         print(f"\nResuming from:     {resume_from}")
     print("=" * 70)
@@ -807,6 +853,9 @@ def train(
             block_steps=self_play_block_steps,
             recovery_steps=pool_recovery_steps,
             min_pool_win_rate=min_pool_win_rate,
+            recovery_win_rate=recovery_win_rate,
+            snapshot_win_rate=snapshot_win_rate,
+            seed_model_path=resume_from,
             verbose=1,
         )
         callbacks.append(self_play_callback)
@@ -940,6 +989,14 @@ if __name__ == "__main__":
         "--min-pool-win-rate", type=float, default=0.60,
         help="Pool win rate threshold to trigger recovery (default: 0.60)",
     )
+    parser.add_argument(
+        "--recovery-win-rate", type=float, default=0.70,
+        help="Pool win rate required to exit recovery and resume self-play (default: 0.70)",
+    )
+    parser.add_argument(
+        "--snapshot-win-rate", type=float, default=None,
+        help="Pool win rate required to save a snapshot (default: midpoint of min-pool-win-rate and recovery-win-rate)",
+    )
 
     args = parser.parse_args()
 
@@ -973,4 +1030,6 @@ if __name__ == "__main__":
         self_play_block_steps=args.self_play_block_steps,
         pool_recovery_steps=args.pool_recovery_steps,
         min_pool_win_rate=args.min_pool_win_rate,
+        recovery_win_rate=args.recovery_win_rate,
+        snapshot_win_rate=args.snapshot_win_rate,
     )

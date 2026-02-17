@@ -181,24 +181,35 @@ See [TRAINING_PLAN.md](TRAINING_PLAN.md) for full details, curriculum design, an
   - Size 4: Complete (Feb 15, 2026). 100% valid rate, ~78% win rate with self-play opponent mixing.
   - Feb 14 rework: strict action masking (invalid boards impossible), flat Discrete action space, forward-only movement, self-play added.
   - Feb 15: Added `--self-play-ratio` for pool opponent mixing during self-play, preventing specialization collapse.
-- **Stage 4 - Fog of War**: Implemented (Feb 16, 2026). Partial opponent board reveal after simulation.
+- **Stage 4 - Fog of War**: In progress (Feb 16-17, 2026). Partial opponent board reveal after simulation.
   - `--fog` flag on `train_simultaneous.py` enables fog-filtered encoding + `fog_outcomes` observation
   - Agent only sees opponent moves up to `playerLastStep`; traps hidden except sprung trap
-  - Ready to train — see [EXPERIMENTS.md](EXPERIMENTS.md) for planned experiments
+  - Size 3 fog pool-only: converged at ~82% win rate by 256k steps, all 6 phases cleared
+  - Size 3 fog + self-play: in progress with quality controls (snapshot gate, recovery threshold, seed model)
 
-### Current Status: Stage 4 (Fog of War) Implemented
+### Current Status: Stage 4 Fog + Self-Play (Size 3)
 
-Stage 3 (full reveal) solved for sizes 2-4. Size 4 achieves ~78% win rate with self-play + pool opponent mixing. Stage 4 (fog of war) environment and training script are implemented and ready to train.
+Stage 3 (full reveal) solved for sizes 2-4. Stage 4 fog pool-only training converged quickly (~82% win rate, 256k steps). Initial fog + self-play attempt showed the opponent snapshot pool can degrade into a quality death spiral — weak snapshots produce weaker training signal.
 
-Under fog of war, the agent only sees opponent moves up to the step where its round ended (`playerLastStep`). Traps are hidden unless the agent actually hit one. The `fog_outcomes` observation provides structured metadata about each round (trap hits, collisions, opponent progress).
+Three quality controls added (Feb 17):
+- **Recovery win rate** (`--recovery-win-rate`): model must hit target win rate against pool opponents before self-play resumes
+- **Snapshot quality gate** (`--snapshot-win-rate`): only snapshot when pool win rate is above threshold, preventing bad models from entering the pool
+- **Seed model**: resumed model is kept as a permanent pool member, never pruned
 
 ```bash
 # Stage 3: Full reveal (sizes 2-4 already solved)
 python examples/train_simultaneous.py --size 4 --self-play --timesteps 5000000
 
-# Stage 4: Fog of war (ready to train)
-python examples/train_simultaneous.py --size 3 --fog --timesteps 5000000
-python examples/train_simultaneous.py --size 4 --fog --timesteps 5000000
+# Stage 4: Fog + self-play with quality controls
+python examples/train_simultaneous.py --size 3 --fog --self-play \
+    --warmup-steps 0 \
+    --resume models/size3/stage4/best/best_model.zip \
+    --timesteps 7500000 \
+    --self-play-block-steps 500000 \
+    --pool-recovery-steps 100000 \
+    --min-pool-win-rate 0.60 \
+    --recovery-win-rate 0.80 \
+    --snapshot-win-rate 0.65
 ```
 
 ### Play Against the Agent

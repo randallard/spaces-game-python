@@ -21,7 +21,7 @@ Stage 2: Reverse Curriculum Construction                 ⚠️  OBSOLETE (repla
    ↓
 Stage 3: Simultaneous 5-Round Play (Full Reveal)        ✅ SIZE 2 + SIZE 3 + SIZE 4 DONE
    ↓
-Stage 4: 5-Round Play with Fog of War                   ✅ IMPLEMENTED (ready to train)
+Stage 4: 5-Round Play with Fog of War                   🔄 IN PROGRESS (size 3 fog + self-play)
    ↓
 Stage 5: Self-Play (Meta-Game)                           ✅ MERGED INTO STAGE 3 (--self-play flag)
    ↓
