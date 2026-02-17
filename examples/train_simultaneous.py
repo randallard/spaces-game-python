@@ -322,6 +322,15 @@ def _check_deprecated_flags(args):
             warnings.warn(f"Deprecated flag {msg}. It will be ignored.", DeprecationWarning, stacklevel=2)
 
 
+def human_int(value: str) -> int:
+    """Parse human-readable integers: 7.5M, 200k, 50K, 10_000, etc."""
+    value = value.strip().replace("_", "")
+    suffixes = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
+    if value and value[-1].lower() in suffixes:
+        return int(float(value[:-1]) * suffixes[value[-1].lower()])
+    return int(float(value))
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -333,20 +342,20 @@ if __name__ == "__main__":
         help="Board size (default: 2)",
     )
     parser.add_argument(
-        "--timesteps", type=int, default=200_000,
-        help="Total training timesteps (default: 200,000)",
+        "--timesteps", type=human_int, default=200_000,
+        help="Total training timesteps (default: 200k). Supports k/M/B suffixes.",
     )
     parser.add_argument(
         "--envs", type=int, default=4,
         help="Number of parallel environments (default: 4)",
     )
     parser.add_argument(
-        "--eval-freq", type=int, default=2000,
-        help="Evaluation frequency in timesteps (default: 2,000)",
+        "--eval-freq", type=human_int, default=2000,
+        help="Evaluation frequency in timesteps (default: 2k)",
     )
     parser.add_argument(
-        "--save-freq", type=int, default=10_000,
-        help="Checkpoint save frequency (default: 10,000)",
+        "--save-freq", type=human_int, default=10_000,
+        help="Checkpoint save frequency (default: 10k)",
     )
     parser.add_argument(
         "--board-pools", type=str, default=None,
@@ -361,8 +370,8 @@ if __name__ == "__main__":
         help="Output directory (default: models/size{N}/stage3)",
     )
     parser.add_argument(
-        "--min-phase-steps", type=int, default=10_000,
-        help="Minimum steps per curriculum phase before advancing (default: 10,000)",
+        "--min-phase-steps", type=human_int, default=10_000,
+        help="Minimum steps per curriculum phase before advancing (default: 10k)",
     )
     parser.add_argument(
         "--learning-rate", type=float, default=3e-4,
@@ -373,11 +382,11 @@ if __name__ == "__main__":
         help="Entropy coefficient for exploration (default: 0.05, try 0.1 for larger boards)",
     )
     parser.add_argument(
-        "--n-steps", type=int, default=2048,
-        help="Total rollout steps across all envs (default: 2048, try 4096-8192 for larger boards)",
+        "--n-steps", type=human_int, default=2048,
+        help="Total rollout steps across all envs (default: 2048, try 4k-8k for larger boards)",
     )
     parser.add_argument(
-        "--batch-size", type=int, default=64,
+        "--batch-size", type=human_int, default=64,
         help="Minibatch size (default: 64)",
     )
     parser.add_argument(
@@ -393,16 +402,16 @@ if __name__ == "__main__":
         help="Enable self-play with progressive window curriculum",
     )
     parser.add_argument(
-        "--snapshot-freq", type=int, default=50_000,
-        help="Steps between self-play snapshots (default: 50,000)",
+        "--snapshot-freq", type=human_int, default=50_000,
+        help="Steps between self-play snapshots (default: 50k)",
     )
     parser.add_argument(
         "--pool-size", type=int, default=10,
         help="Max self-play snapshots to keep (default: 10)",
     )
     parser.add_argument(
-        "--warmup-steps", type=int, default=100_000,
-        help="Steps before self-play activates (default: 100,000)",
+        "--warmup-steps", type=human_int, default=100_000,
+        help="Steps before self-play activates (default: 100k)",
     )
     parser.add_argument(
         "--win-rate-threshold", type=float, default=0.70,
@@ -417,8 +426,8 @@ if __name__ == "__main__":
         help="Self-play: win rate to back up a level (default: 0.55)",
     )
     parser.add_argument(
-        "--min-steps-per-level", type=int, default=50_000,
-        help="Self-play: minimum steps before advancing level (default: 50,000)",
+        "--min-steps-per-level", type=human_int, default=50_000,
+        help="Self-play: minimum steps before advancing level (default: 50k)",
     )
     parser.add_argument(
         "--recovery-win-rate", type=float, default=0.70,
@@ -430,8 +439,8 @@ if __name__ == "__main__":
     )
 
     # Deprecated flags — kept for backwards compatibility, ignored with warning
-    parser.add_argument("--self-play-block-steps", type=int, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--pool-recovery-steps", type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--self-play-block-steps", type=human_int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--pool-recovery-steps", type=human_int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--min-pool-win-rate", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--self-play-ratio", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--board-library", type=str, default=None, help=argparse.SUPPRESS)
