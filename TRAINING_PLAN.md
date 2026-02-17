@@ -5,6 +5,7 @@ This document is the practical guide for training an RL agent from scratch for a
 For hardware details and constraints, see [TRAINING_ARCHITECTURE.md](TRAINING_ARCHITECTURE.md).
 For fog of war experiments and research, see [EXPERIMENTS.md](EXPERIMENTS.md).
 For deployment to the inference server, see [DEPLOYMENT.md](DEPLOYMENT.md).
+For Discord training notifications, see [DISCORD_SETUP.md](DISCORD_SETUP.md).
 
 ---
 
@@ -302,6 +303,21 @@ python examples/play_against_agent.py --size 5 --difficulty beginner --stochasti
 | `--pool-size` | 10 | Max snapshots to keep |
 | `--warmup-steps` | 100,000 | Steps before self-play activates |
 
+### Discord Notifications
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--discord-webhook URL` | None | Discord webhook URL for training notifications |
+| `--discord-check-in N` | 30 | Minutes between periodic check-in messages |
+
+To create a webhook: Discord Server Settings > Integrations > Webhooks > New Webhook. Copy the webhook URL and pass it with `--discord-webhook`.
+
+When enabled, sends:
+- **Milestone alerts**: phase advances, self-play level changes, recovery enter/exit, training complete
+- **Periodic check-ins**: progress summary with win rate trends and commentary (every N minutes)
+
+No notifications are sent if `--discord-webhook` is not provided.
+
 ### Deprecated (accepted but ignored)
 
 | Flag | Replaced By |
@@ -332,6 +348,9 @@ train_simultaneous.py        CLI entry point, env/model wiring
         |
         +-- spaces_game/callbacks/self_play.py
         |     SelfPlayCurriculumCallback (window levels, snapshots)
+        |
+        +-- spaces_game/callbacks/discord_notifier.py
+        |     DiscordNotifierCallback (webhook alerts, check-ins)
         |
         v
 spaces_game/simultaneous_play_env.py
@@ -371,7 +390,8 @@ spaces_game/simultaneous_play_env.py
 - Stage 4 fog pool-only: Converged at ~82% win rate by 256K steps
 - Stage 4 fog + self-play take 1 (block scheduling): Destabilized, ~46% win rate death spiral
 - Stage 4 fog + self-play take 2 (quality controls): Partially recovered but oscillated 40-55%
-- Stage 4 fog + self-play take 3 (progressive window): **Running** (Feb 17) — 7.5M steps, resumed from pool-only best model
+- Stage 4 fog + self-play take 3 (progressive window): Stopped at 660K/7.5M — level oscillation (hit level 2 three times, backtracked each time due to no min-step guard on backtracking)
+- Stage 4 fog + self-play take 4 (tuned thresholds): **Running** (Feb 17) — 10M steps, resumed from take 3 checkpoint (660K). Changes: advance 0.75, backtrack 0.45, min-step guard on backtracking, Discord notifications
 
 ### Size 4 (Feb 2026)
 - Stage 3 pool-only: 2M steps, all 7 phases cleared, 100% valid rate

@@ -111,12 +111,13 @@ class TestSelfPlayCurriculumCallback:
         assert cb.max_level == 1
 
     def test_backtrack_on_low_win_rate(self):
-        """Should backtrack when win rate drops below threshold."""
+        """Should backtrack when win rate drops below threshold after min steps."""
         phase_cb = MagicMock()
         phase_cb.phase_history = [{"game_win_rate": 0.40}]
         cb = self._make_callback(
             phase_callback=phase_cb,
             backtrack_threshold=0.55,
+            min_steps_per_level=10,
             warmup_steps=0,
             n_envs=1,
         )
@@ -124,16 +125,19 @@ class TestSelfPlayCurriculumCallback:
         cb._warmup_complete = True
         cb._in_recovery = False
         cb.window_level = 2
+        cb._level_start_step = 0
+        cb.n_calls = 100  # 100 * 1 = 100 >= 10
         cb._check_level_transition()
         assert cb.window_level == 1
 
     def test_recovery_at_level_zero(self):
-        """Should enter recovery when at level 0 and win rate is below backtrack."""
+        """Should enter recovery when at level 0 and win rate is below backtrack after min steps."""
         phase_cb = MagicMock()
         phase_cb.phase_history = [{"game_win_rate": 0.40}]
         cb = self._make_callback(
             phase_callback=phase_cb,
             backtrack_threshold=0.55,
+            min_steps_per_level=10,
             warmup_steps=0,
             n_envs=1,
         )
@@ -141,6 +145,8 @@ class TestSelfPlayCurriculumCallback:
         cb._warmup_complete = True
         cb._in_recovery = False
         cb.window_level = 0
+        cb._level_start_step = 0
+        cb.n_calls = 100  # 100 * 1 = 100 >= 10
         cb._check_level_transition()
         assert cb._in_recovery
         assert cb.window_level == 0

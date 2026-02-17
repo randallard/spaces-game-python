@@ -41,6 +41,7 @@ from spaces_game.callbacks import (
     build_phase_map,
     OpponentProgressionCallback,
     SelfPlayCurriculumCallback,
+    DiscordNotifierCallback,
 )
 
 
@@ -102,6 +103,8 @@ def train(
     min_steps_per_level: int = 50_000,
     recovery_win_rate: float = 0.70,
     snapshot_win_rate: Optional[float] = None,
+    discord_webhook: Optional[str] = None,
+    discord_check_in: int = 30,
 ):
     """Train MaskablePPO agent for simultaneous 5-round play."""
     # Defaults — auto-discover pools from boards/sizeN/
@@ -268,6 +271,7 @@ def train(
 
     callbacks = [phase_callback, checkpoint_callback, eval_callback]
 
+    self_play_callback = None
     if self_play:
         self_play_callback = SelfPlayCurriculumCallback(
             output_dir=output_dir,
@@ -285,6 +289,21 @@ def train(
             verbose=1,
         )
         callbacks.append(self_play_callback)
+
+    if discord_webhook:
+        discord_callback = DiscordNotifierCallback(
+            webhook_url=discord_webhook,
+            board_size=board_size,
+            total_timesteps=total_timesteps,
+            n_envs=n_envs,
+            use_fog=use_fog,
+            self_play=self_play,
+            check_in_minutes=discord_check_in,
+            phase_callback=phase_callback,
+            self_play_callback=self_play_callback,
+            verbose=1,
+        )
+        callbacks.append(discord_callback)
 
     model.learn(
         total_timesteps=total_timesteps,
@@ -438,6 +457,16 @@ if __name__ == "__main__":
         help="Pool win rate required to save a snapshot (default: midpoint of backtrack and advance thresholds)",
     )
 
+    # Discord notifications
+    parser.add_argument(
+        "--discord-webhook", type=str, default=None,
+        help="Discord webhook URL for training notifications (disabled if not set)",
+    )
+    parser.add_argument(
+        "--discord-check-in", type=human_int, default=30,
+        help="Minutes between periodic Discord check-in messages (default: 30)",
+    )
+
     # Deprecated flags — kept for backwards compatibility, ignored with warning
     parser.add_argument("--self-play-block-steps", type=human_int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--pool-recovery-steps", type=human_int, default=None, help=argparse.SUPPRESS)
@@ -481,4 +510,6 @@ if __name__ == "__main__":
         min_steps_per_level=args.min_steps_per_level,
         recovery_win_rate=args.recovery_win_rate,
         snapshot_win_rate=args.snapshot_win_rate,
+        discord_webhook=args.discord_webhook,
+        discord_check_in=args.discord_check_in,
     )

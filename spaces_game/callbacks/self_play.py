@@ -149,8 +149,9 @@ class SelfPlayCurriculumCallback(BaseCallback):
                           f"Resuming at level 0")
             return
 
-        # Check backtrack condition (no minimum step requirement)
-        if pool_win_rate < self.backtrack_threshold:
+        # Check backtrack condition (requires minimum steps to avoid noisy eval knee-jerks)
+        if (pool_win_rate < self.backtrack_threshold and
+                steps_at_level >= self.min_steps_per_level):
             if self.window_level > 0:
                 self.window_level -= 1
                 self._level_start_step = self.n_calls
