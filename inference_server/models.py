@@ -8,6 +8,12 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class AgentType(str, Enum):
+    """Agent type selection: standard (full reveal) or fog (fog of war)."""
+    standard = "standard"
+    fog = "fog"
+
+
 class SkillLevel(str, Enum):
     """Available skill levels for the AI agent."""
     beginner = "beginner"
@@ -45,6 +51,10 @@ class ConstructBoardRequest(BaseModel):
     skill_level: SkillLevel = Field(
         default=SkillLevel.intermediate,
         description="AI skill level",
+    )
+    agent_type: AgentType = Field(
+        default=AgentType.standard,
+        description="Agent type: 'standard' (full reveal) or 'fog' (fog of war)",
     )
 
 

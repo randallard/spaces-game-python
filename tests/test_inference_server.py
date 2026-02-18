@@ -32,19 +32,39 @@ def _make_valid_board(board_size: int = 2) -> Board:
     return Board(boardSize=board_size, grid=grid, sequence=sequence)
 
 
-def _create_mock_registry(board_sizes=None):
-    """Create a mock ModelRegistry."""
+def _create_mock_registry(board_sizes=None, agent_types=None):
+    """Create a mock ModelRegistry.
+
+    Args:
+        board_sizes: List of supported board sizes.
+        agent_types: Dict mapping board_size -> list of agent types.
+            Defaults to ["standard"] for each size.
+    """
     if board_sizes is None:
         board_sizes = [2]
+    if agent_types is None:
+        agent_types = {s: ["standard"] for s in board_sizes}
 
     mock_registry = MagicMock()
     mock_registry.supported_board_sizes = board_sizes
-    mock_registry.get_loaded_models_info.return_value = {
-        f"size{s}": [{"checkpoint": "advanced", "path": f"models/size{s}/stage3/model.zip"}]
-        for s in board_sizes
-    }
 
-    # Mock model that looks like a Stage 3 model
+    # Build loaded_models_info in the new format (grouped by agent_type)
+    loaded_models = {}
+    for s in board_sizes:
+        key = f"size{s}"
+        loaded_models[key] = {}
+        for at in agent_types.get(s, ["standard"]):
+            stage = "stage4" if at == "fog" else "stage3"
+            loaded_models[key][at] = [
+                {"checkpoint": "advanced", "path": f"models/size{s}/{stage}/model.zip"}
+            ]
+    mock_registry.get_loaded_models_info.return_value = loaded_models
+
+    def _get_available_agent_types(board_size):
+        return agent_types.get(board_size, ["standard"])
+    mock_registry.get_available_agent_types.side_effect = _get_available_agent_types
+
+    # Mock model that looks like a Stage 3/4 model (has opponent_history)
     mock_model = MagicMock()
     mock_model.observation_space = MagicMock()
     mock_model.observation_space.spaces = {
@@ -110,8 +130,28 @@ class TestInfoEndpoint:
         data = response.json()
         assert "size2" in data["loaded_models"]
         models = data["loaded_models"]["size2"]
-        assert len(models) >= 1
-        assert models[0]["checkpoint"] == "advanced"
+        assert "standard" in models
+        assert len(models["standard"]) >= 1
+        assert models["standard"][0]["checkpoint"] == "advanced"
+
+    def test_info_shows_fog_models(self):
+        """Test that /info shows fog models when available."""
+        registry, _ = _create_mock_registry(
+            board_sizes=[3],
+            agent_types={3: ["standard", "fog"]},
+        )
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.get("/info")
+
+        data = response.json()
+        assert "size3" in data["loaded_models"]
+        models = data["loaded_models"]["size3"]
+        assert "standard" in models
+        assert "fog" in models
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +190,7 @@ class TestConstructBoardEndpoint:
             assert len(data["board"]["sequence"]) == 3
             assert data["board"]["grid"] is not None
             assert data["model_info"]["skill_level"] == "advanced"
+            assert data["model_info"]["agent_type"] == "standard"
 
     def test_construct_board_invalid_skill_level(self, mock_registry):
         """Test with an invalid skill level returns 422."""
@@ -276,6 +317,126 @@ class TestConstructBoardEndpoint:
             # Check grid format
             assert len(board["grid"]) == 2
             assert len(board["grid"][0]) == 2
+
+    def test_construct_board_default_agent_type(self, mock_registry):
+        """Test that omitting agent_type defaults to 'standard' (backward compat)."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                })
+
+            assert response.status_code == 200
+            # Registry should be called with agent_type="standard"
+            call_args = registry.get_model.call_args
+            assert call_args.kwargs.get("agent_type", call_args.args[2] if len(call_args.args) > 2 else None) == "standard" or \
+                   call_args == ((2, "intermediate"), {"agent_type": "standard"}) or \
+                   "standard" in str(call_args)
+
+    def test_construct_board_fog_agent_type(self, mock_registry):
+        """Test requesting fog agent type passes use_fog=True to build."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "agent_type": "fog",
+                })
+
+            assert response.status_code == 200
+            # Verify use_fog=True was passed
+            call_args = mock_build.call_args
+            assert call_args.kwargs["use_fog"] is True
+            # Verify model_info includes agent_type
+            data = response.json()
+            assert data["model_info"]["agent_type"] == "fog"
+
+    def test_construct_board_standard_agent_type_no_fog(self, mock_registry):
+        """Test requesting standard agent type passes use_fog=False."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "agent_type": "standard",
+                })
+
+            assert response.status_code == 200
+            call_args = mock_build.call_args
+            assert call_args.kwargs["use_fog"] is False
+
+    def test_construct_board_fog_no_model_returns_404(self):
+        """Test requesting fog for a size with no stage4 models returns 404."""
+        registry, _ = _create_mock_registry(board_sizes=[2])
+        # Make get_model raise KeyError for fog
+        def _get_model(board_size, skill_level, agent_type="standard"):
+            if agent_type == "fog":
+                raise KeyError(
+                    f"No model available for board_size={board_size}, "
+                    f"agent_type=fog (stage=stage4)"
+                )
+            mock_model = MagicMock()
+            mock_model.observation_space = MagicMock()
+            mock_model.observation_space.spaces = {"opponent_history": MagicMock()}
+            return mock_model, True, True
+        registry.get_model.side_effect = _get_model
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "agent_type": "fog",
+            })
+
+        assert response.status_code == 404
+        assert "No model available" in response.json()["detail"]
+
+    def test_construct_board_invalid_agent_type(self, mock_registry):
+        """Test with invalid agent_type returns 422."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "agent_type": "invisible",
+            })
+
+        assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------

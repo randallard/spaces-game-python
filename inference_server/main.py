@@ -23,6 +23,7 @@ from .inference import (
 )
 from .model_registry import ModelRegistry, SKILL_LEVEL_CONFIG
 from .models import (
+    AgentType,
     ConstructBoardRequest,
     ConstructBoardResponse,
     HealthResponse,
@@ -242,19 +243,22 @@ async def construct_board(request: ConstructBoardRequest):
             ),
         )
 
-    # Get model for skill level
+    # Get model for skill level and agent type
+    agent_type = request.agent_type.value
     try:
-        model, uses_masks, deterministic = registry.get_model(board_size, skill_level)
+        model, uses_masks, deterministic = registry.get_model(
+            board_size, skill_level, agent_type=agent_type,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    # Verify it's a Stage 3 model
+    # Verify it's a simultaneous play model (both stage3 and stage4 have opponent_history)
     if not is_stage3_model(model):
         raise HTTPException(
             status_code=500,
-            detail="Loaded model is not a Stage 3 (simultaneous play) model.",
+            detail="Loaded model is not a simultaneous play model.",
         )
 
     # Get opponent pools
@@ -289,6 +293,7 @@ async def construct_board(request: ConstructBoardRequest):
             opponent_history_grids=opponent_history_grids,
             opponent_pools=opponent_pools,
             deterministic=deterministic,
+            use_fog=(agent_type == "fog"),
         )
     except ValueError as e:
         if "observation shape" in str(e).lower():
@@ -318,6 +323,7 @@ async def construct_board(request: ConstructBoardRequest):
     model_board_size = get_model_board_size(model)
     model_info = {
         "skill_level": skill_level,
+        "agent_type": agent_type,
         "deterministic": deterministic,
         "uses_masks": uses_masks,
         "model_board_size": model_board_size,

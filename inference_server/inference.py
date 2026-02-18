@@ -147,8 +147,9 @@ def build_board_for_round(
     opponent_pools: List[str],
     deterministic: bool = True,
     max_retries: int = 5,
+    use_fog: bool = False,
 ) -> Tuple[Board, int]:
-    """Have a Stage 3 agent build a board blind (simultaneous play).
+    """Have a Stage 3/4 agent build a board blind (simultaneous play).
 
     Manually drives construction using the SimultaneousPlayEnv's observation
     space and action masking, but does NOT simulate or advance rounds.
@@ -165,6 +166,7 @@ def build_board_for_round(
         opponent_pools: List of paths to opponent pool JSON files.
         deterministic: If True, use deterministic prediction.
         max_retries: Maximum attempts to produce a valid board.
+        use_fog: If True, create env with fog of war obs space (for stage4 models).
 
     Returns:
         Tuple of (Board, attempts_used). Board may be invalid if all retries fail.
@@ -174,6 +176,7 @@ def build_board_for_round(
         board_size=board_size,
         opponent_pools=opponent_pools,
         max_construction_steps=max_steps,
+        use_fog=use_fog,
     )
 
     board = None

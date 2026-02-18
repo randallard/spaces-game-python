@@ -295,12 +295,12 @@ All changes are additive:
 - [ ] Verify from Node app: start a game, check AI constructs valid boards
 
 ### Adding Fog of War Support
-- [ ] Train Stage 4 fog models for target sizes
-- [ ] Update `.gitignore` for `stage4/` paths
-- [ ] Update `model_registry.py` to discover `stage4/` directories
-- [ ] Add `agent_type` field to `ConstructBoardRequest`
-- [ ] Update `build_board_for_round()` to pass `use_fog=True` for fog models
-- [ ] Update `/info` to expose available agent types
+- [x] Train Stage 4 fog models for target sizes
+- [x] Update `.gitignore` for `stage4/` paths
+- [x] Update `model_registry.py` to discover `stage4/` directories
+- [x] Add `agent_type` field to `ConstructBoardRequest`
+- [x] Update `build_board_for_round()` to pass `use_fog=True` for fog models
+- [x] Update `/info` to expose available agent types
 - [ ] Deploy Python server
 - [ ] Update Node app: agent type picker UI, pass `agent_type` in requests, fog display mode
 - [ ] Deploy Node app

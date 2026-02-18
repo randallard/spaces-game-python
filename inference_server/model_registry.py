@@ -2,7 +2,7 @@
 Model registry for managing skill-level-to-model mapping.
 
 Handles convention-based discovery of model checkpoints and provides
-a cache of loaded models keyed by (board_size, checkpoint_type).
+a cache of loaded models keyed by (board_size, stage, checkpoint_type).
 """
 
 import logging
@@ -25,6 +25,12 @@ SKILL_LEVEL_CONFIG: Dict[str, Tuple[str, bool]] = {
     "advanced_plus":     ("advanced", True),
 }
 
+# Agent type -> stage directory name
+AGENT_TYPE_TO_STAGE: Dict[str, str] = {
+    "standard": "stage3",
+    "fog": "stage4",
+}
+
 
 def _extract_step_count(filename: str) -> Optional[int]:
     """Extract step count from a checkpoint filename like 'ppo_100000_steps.zip'."""
@@ -38,7 +44,7 @@ class ModelRegistry:
     """Registry that loads and caches models, mapping skill levels to checkpoints.
 
     Convention-based discovery:
-    - Models are expected in {models_dir}/size{N}/stage3/
+    - Models are expected in {models_dir}/size{N}/stage{3,4}/
     - "early" checkpoint: earliest step checkpoint or files matching *_early*
     - "mid" checkpoint: mid-range step checkpoint or files matching *_mid*
     - "advanced" checkpoint: latest/best/final model
@@ -49,14 +55,17 @@ class ModelRegistry:
         self.models_dir = models_dir
         self.boards_dir = boards_dir
 
-        # Cache: (board_size, checkpoint_type) -> (model, uses_masks)
-        self._model_cache: Dict[Tuple[int, str], Tuple[object, bool]] = {}
+        # Cache: (board_size, stage, checkpoint_type) -> (model, uses_masks)
+        self._model_cache: Dict[Tuple[int, str, str], Tuple[object, bool]] = {}
 
-        # Discovered model paths: (board_size, checkpoint_type) -> path
-        self._model_paths: Dict[Tuple[int, str], str] = {}
+        # Discovered model paths: (board_size, stage, checkpoint_type) -> path
+        self._model_paths: Dict[Tuple[int, str, str], str] = {}
 
         # Discovered board sizes
         self._board_sizes: List[int] = []
+
+        # Available stages per board size
+        self._stages_by_size: Dict[int, List[str]] = {}
 
         # Opponent pools cache: board_size -> list of pool paths
         self._opponent_pools: Dict[int, List[str]] = {}
@@ -68,7 +77,7 @@ class ModelRegistry:
             logger.warning("Models directory does not exist: %s", self.models_dir)
             return
 
-        # Look for size{N}/stage3/ directories
+        # Look for size{N}/stage{3,4}/ directories
         for size_dir in sorted(base.glob("size*")):
             if not size_dir.is_dir():
                 continue
@@ -77,19 +86,26 @@ class ModelRegistry:
                 continue
             board_size = int(match.group(1))
 
-            stage3_dir = size_dir / "stage3"
-            if not stage3_dir.exists():
-                logger.debug("No stage3 directory for size %d", board_size)
-                continue
+            stages_found = []
+            for stage in ["stage3", "stage4"]:
+                stage_dir = size_dir / stage
+                if not stage_dir.exists():
+                    logger.debug("No %s directory for size %d", stage, board_size)
+                    continue
 
-            # Gather all zip files
-            zip_files = sorted(stage3_dir.glob("*.zip"))
-            if not zip_files:
-                logger.debug("No model files in %s", stage3_dir)
-                continue
+                # Gather all zip files
+                zip_files = sorted(stage_dir.glob("*.zip"))
+                if not zip_files:
+                    logger.debug("No model files in %s", stage_dir)
+                    continue
 
-            self._board_sizes.append(board_size)
-            self._assign_checkpoints(board_size, zip_files)
+                stages_found.append(stage)
+                self._assign_checkpoints(board_size, stage, zip_files)
+
+            if stages_found:
+                if board_size not in self._board_sizes:
+                    self._board_sizes.append(board_size)
+                self._stages_by_size[board_size] = stages_found
 
         # Discover opponent pools for each board size
         for board_size in self._board_sizes:
@@ -107,7 +123,7 @@ class ModelRegistry:
             len(self._board_sizes), len(self._model_paths),
         )
 
-    def _assign_checkpoints(self, board_size: int, zip_files: List[Path]) -> None:
+    def _assign_checkpoints(self, board_size: int, stage: str, zip_files: List[Path]) -> None:
         """Assign zip files to checkpoint types (early, mid, advanced)."""
         if len(zip_files) == 0:
             return
@@ -116,10 +132,10 @@ class ModelRegistry:
         if len(zip_files) == 1:
             path_str = str(zip_files[0])
             for checkpoint_type in ("early", "mid", "advanced"):
-                self._model_paths[(board_size, checkpoint_type)] = path_str
+                self._model_paths[(board_size, stage, checkpoint_type)] = path_str
             logger.info(
-                "Single model for size %d, using for all checkpoints: %s",
-                board_size, zip_files[0].name,
+                "Single model for size %d %s, using for all checkpoints: %s",
+                board_size, stage, zip_files[0].name,
             )
             return
 
@@ -172,45 +188,46 @@ class ModelRegistry:
 
         for checkpoint_type, path in named_map.items():
             if path is not None:
-                self._model_paths[(board_size, checkpoint_type)] = str(path)
+                self._model_paths[(board_size, stage, checkpoint_type)] = str(path)
                 logger.info(
-                    "Size %d, %s checkpoint: %s",
-                    board_size, checkpoint_type, path.name,
+                    "Size %d %s, %s checkpoint: %s",
+                    board_size, stage, checkpoint_type, path.name,
                 )
 
     def load_all(self) -> None:
         """Load all discovered models into cache."""
-        for (board_size, checkpoint_type), path in self._model_paths.items():
-            if (board_size, checkpoint_type) in self._model_cache:
+        for (board_size, stage, checkpoint_type), path in self._model_paths.items():
+            if (board_size, stage, checkpoint_type) in self._model_cache:
                 continue
             try:
                 model, uses_masks = load_agent(path)
-                self._model_cache[(board_size, checkpoint_type)] = (model, uses_masks)
+                self._model_cache[(board_size, stage, checkpoint_type)] = (model, uses_masks)
                 logger.info(
-                    "Loaded model: size=%d, checkpoint=%s, path=%s, masks=%s",
-                    board_size, checkpoint_type, path, uses_masks,
+                    "Loaded model: size=%d, stage=%s, checkpoint=%s, path=%s, masks=%s",
+                    board_size, stage, checkpoint_type, path, uses_masks,
                 )
             except Exception as e:
                 logger.error(
-                    "Failed to load model: size=%d, checkpoint=%s, path=%s: %s",
-                    board_size, checkpoint_type, path, e,
+                    "Failed to load model: size=%d, stage=%s, checkpoint=%s, path=%s: %s",
+                    board_size, stage, checkpoint_type, path, e,
                 )
 
     def get_model(
-        self, board_size: int, skill_level: str,
+        self, board_size: int, skill_level: str, agent_type: str = "standard",
     ) -> Tuple[object, bool, bool]:
-        """Get a loaded model for the given board size and skill level.
+        """Get a loaded model for the given board size, skill level, and agent type.
 
         Args:
             board_size: Grid dimension (NxN).
             skill_level: One of the SKILL_LEVEL_CONFIG keys.
+            agent_type: "standard" or "fog".
 
         Returns:
             Tuple of (model, uses_masks, deterministic).
 
         Raises:
-            ValueError: If skill_level is unknown.
-            KeyError: If no model is available for the given board_size and checkpoint.
+            ValueError: If skill_level or agent_type is unknown.
+            KeyError: If no model is available for the given board_size, stage, and checkpoint.
         """
         if skill_level not in SKILL_LEVEL_CONFIG:
             raise ValueError(
@@ -218,8 +235,15 @@ class ModelRegistry:
                 f"Available: {list(SKILL_LEVEL_CONFIG.keys())}"
             )
 
+        if agent_type not in AGENT_TYPE_TO_STAGE:
+            raise ValueError(
+                f"Unknown agent type: {agent_type}. "
+                f"Available: {list(AGENT_TYPE_TO_STAGE.keys())}"
+            )
+
+        stage = AGENT_TYPE_TO_STAGE[agent_type]
         checkpoint_type, deterministic = SKILL_LEVEL_CONFIG[skill_level]
-        cache_key = (board_size, checkpoint_type)
+        cache_key = (board_size, stage, checkpoint_type)
 
         if cache_key not in self._model_cache:
             # Try to load on-demand if path is known
@@ -230,6 +254,7 @@ class ModelRegistry:
             else:
                 raise KeyError(
                     f"No model available for board_size={board_size}, "
+                    f"agent_type={agent_type} (stage={stage}), "
                     f"checkpoint={checkpoint_type}. "
                     f"Available: {list(self._model_paths.keys())}"
                 )
@@ -252,19 +277,33 @@ class ModelRegistry:
         """Get summary of all loaded models for the /info endpoint.
 
         Returns:
-            Dict mapping "size{N}" to list of checkpoint types loaded.
+            Dict mapping "size{N}" to dict of agent_type -> list of checkpoints.
         """
-        info: Dict[str, list] = {}
-        for (board_size, checkpoint_type) in self._model_cache:
+        info: Dict[str, Dict[str, list]] = {}
+        for (board_size, stage, checkpoint_type) in self._model_cache:
             key = f"size{board_size}"
+            # Map stage back to agent_type
+            agent_type = "fog" if stage == "stage4" else "standard"
             if key not in info:
-                info[key] = []
-            path = self._model_paths.get((board_size, checkpoint_type), "unknown")
-            info[key].append({
+                info[key] = {}
+            if agent_type not in info[key]:
+                info[key][agent_type] = []
+            path = self._model_paths.get((board_size, stage, checkpoint_type), "unknown")
+            info[key][agent_type].append({
                 "checkpoint": checkpoint_type,
                 "path": path,
             })
         return info
+
+    def get_available_agent_types(self, board_size: int) -> List[str]:
+        """Return list of agent types available for a given board size."""
+        stages = self._stages_by_size.get(board_size, [])
+        agent_types = []
+        if "stage3" in stages:
+            agent_types.append("standard")
+        if "stage4" in stages:
+            agent_types.append("fog")
+        return agent_types
 
     @property
     def supported_board_sizes(self) -> List[int]:
