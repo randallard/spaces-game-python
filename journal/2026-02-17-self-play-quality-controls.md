@@ -370,3 +370,15 @@ python examples/train_simultaneous.py \
 - **`self_play/sp_eval_win_rate`**: New TensorBoard metric showing direct performance against snapshot opponents. This drives level transitions now.
 - **Level stability**: With wider thresholds + min-step guard + separate eval signal, levels should be much more stable. If the agent reaches level 2 it should stay there or progress.
 - **Discord**: Watch for startup confirmation line: `DISCORD: Sent 'Training Started...'`. If it doesn't appear, the webhook URL wasn't passed.
+
+---
+
+## Consistent Pool Opponent Style Per Game (Feb 17)
+
+**Problem**: `_select_opponent_board()` picked a random pool file and random board each round. Within a single 5-round game, the opponent might play simple in round 1, super_move_counter in round 2, etc. No real opponent plays like that — they have a consistent style.
+
+**Fix**: At game reset, lock one pool file for the entire game. All 5 rounds draw boards from the same pool. The agent now faces a "simple player" or a "super_move player" — not a random mix.
+
+This makes pool evaluation meaningful again: the agent must learn to read an opponent's style from early rounds and adapt. Previously, there was no pattern to detect.
+
+**TODO (verify)**: Confirm this change improves pool eval signal quality. Compare pool win rates before and after in the next run that uses pool opponents (either pool-only training or recovery mode). If the agent's pool win rate becomes less volatile and more predictive of actual play quality, the fix is validated.

@@ -190,12 +190,19 @@ class SimultaneousPlayEnv(gym.Env):
         ]
 
     def _select_opponent_board(self) -> Board:
-        """Select opponent board from active pools."""
-        active = self._get_active_pools()
-        if not active:
-            active = self.opponent_pools  # fallback
-        # Pick a random pool, then a random board from it
-        pool = active[np.random.randint(len(active))]
+        """Select opponent board from the game's locked pool.
+
+        The pool is chosen once at game reset so the opponent plays a
+        consistent style across all 5 rounds (e.g., all simple boards
+        or all super_move boards), matching how a real opponent would play.
+        """
+        pool = getattr(self, '_game_pool', None)
+        if not pool:
+            # Fallback for envs created before reset
+            active = self._get_active_pools()
+            if not active:
+                active = self.opponent_pools
+            pool = active[np.random.randint(len(active))] if active else self.opponent_pools[0]
         return pool[np.random.randint(len(pool))]
 
     # --- Board encoding ---
@@ -583,6 +590,12 @@ class SimultaneousPlayEnv(gym.Env):
 
         # Track agent's boards for opponent history in self-play
         self._agent_boards_this_game: List[Board] = []
+
+        # Lock one pool for the entire 5-round game (consistent opponent style)
+        active = self._get_active_pools()
+        if not active:
+            active = self.opponent_pools
+        self._game_pool = active[np.random.randint(len(active))] if active else []
 
         # Reset construction state for round 0
         self._init_construction_state()

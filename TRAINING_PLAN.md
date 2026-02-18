@@ -370,6 +370,8 @@ spaces_game/simultaneous_play_env.py
 
 **Forward-only movement**: Piece can only move to equal or lower row indices. BFS checks forward + sideways only. Prevents path oscillation.
 
+**Consistent opponent style per game**: At game reset, one pool file is locked for all 5 rounds. The opponent plays a consistent style (e.g., all simple or all super_move), matching realistic play patterns. TODO (verify): confirm this improves pool eval signal quality in the next pool-training run.
+
 **First-visit scoring**: Points only for reaching a new best row. No oscillation farming.
 
 **Trap limit**: Max traps = `board_size - 1`. Forces strategic trade-offs between supermove, regular trap, and speed.
