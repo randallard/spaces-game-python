@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from datetime import datetime
 import numpy as np
 from typing import Optional, List, Dict, TYPE_CHECKING
 from stable_baselines3.common.callbacks import BaseCallback
@@ -179,6 +180,7 @@ class SelfPlayCurriculumCallback(BaseCallback):
                 self._level_start_step = self.n_calls
                 self.window_level = 0
                 self._activate_self_play()
+                self._save_level_advancement(0, "exit_recovery")
                 if self.verbose >= 1:
                     print(f"\n  SELF-PLAY: Recovery complete (pool WR {pool_win_rate:.1%}). "
                           f"Resuming at level 0")
@@ -188,9 +190,11 @@ class SelfPlayCurriculumCallback(BaseCallback):
         if (level_win_rate < self.backtrack_threshold and
                 steps_at_level >= self.min_steps_per_level):
             if self.window_level > 0:
+                old_level = self.window_level
                 self.window_level -= 1
                 self._level_start_step = self.n_calls
                 self._assign_opponents()
+                self._save_level_advancement(self.window_level, f"backtrack_from_{old_level}")
                 if self.verbose >= 1:
                     print(f"\n  SELF-PLAY: Backtrack to level {self.window_level} "
                           f"(SP eval {level_win_rate:.1%} < {self.backtrack_threshold:.1%})")
@@ -199,6 +203,7 @@ class SelfPlayCurriculumCallback(BaseCallback):
                 self._in_recovery = True
                 self._level_start_step = self.n_calls
                 self._set_ratio(0.0)
+                self._save_level_advancement(0, "enter_recovery")
                 if self.verbose >= 1:
                     print(f"\n  SELF-PLAY: Entering pool recovery "
                           f"(SP eval {level_win_rate:.1%} < {self.backtrack_threshold:.1%})")
@@ -209,14 +214,35 @@ class SelfPlayCurriculumCallback(BaseCallback):
         if (level_win_rate >= self.advance_threshold and
                 steps_at_level >= self.min_steps_per_level and
                 self.window_level < max_possible_level):
+            self._save_level_advancement(self.window_level, f"before_advance_to_{self.window_level + 1}")
             self.window_level += 1
             self.max_level = max(self.max_level, self.window_level)
             self._level_start_step = self.n_calls
             self._assign_opponents()
+            self._save_level_advancement(self.window_level, f"advance_from_{self.window_level - 1}")
             if self.verbose >= 1:
                 print(f"\n  SELF-PLAY: Advanced to level {self.window_level} "
                       f"(SP eval {level_win_rate:.1%} >= {self.advance_threshold:.1%}, "
                       f"{len(self.snapshot_paths)} snapshots)")
+
+    def _save_level_advancement(self, level: int, event: str):
+        """Save a model snapshot for a level transition event.
+
+        Args:
+            level: The window level at the time of the event.
+            event: Description like "advance_to_3" or "backtrack_to_1".
+        """
+        la_dir = os.path.join(self.output_dir, "level_advancement")
+        os.makedirs(la_dir, exist_ok=True)
+
+        total_steps = self.n_calls * self.n_envs
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        steps_str = f"{total_steps / 1000:.0f}k" if total_steps < 1_000_000 else f"{total_steps / 1_000_000:.2f}M"
+        filename = f"{timestamp}_level{level}_{event}_{steps_str}.zip"
+        path = os.path.join(la_dir, filename)
+        self.model.save(path)
+        if self.verbose >= 1:
+            print(f"  LEVEL ADVANCEMENT: Saved {filename}")
 
     def _evaluate_against_snapshots(self):
         """Run evaluation games against current window of snapshot opponents.
