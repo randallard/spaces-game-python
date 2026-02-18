@@ -14,8 +14,8 @@ For Discord training notifications, see [DISCORD_SETUP.md](DISCORD_SETUP.md).
 | Size | Stage 3 (Full Reveal) | Stage 4 (Fog) | Self-Play | Model Path |
 |------|----------------------|---------------|-----------|------------|
 | 2 | Complete | Not started | Not needed | `models/size2/stage3/best/` |
-| 3 | Complete | Pool converged (~82% WR) | Fog+SP take 3 running (progressive window) | `models/size3/stage3/best/` |
-| 4 | Complete (~78% WR) | Not started | Complete (pool mixing) | `models/size4/stage3/best/` |
+| 3 | Complete | Pool converged (~82% WR) | Fog+SP take 5 stopped (level 4, plateau at ~50% WR) | `models/size3/stage4/best/` |
+| 4 | Complete (~78% WR) | **Running** (fog pool-only, 10M steps) | Complete (pool mixing) | `models/size4/stage3/best/` |
 | 5+ | Not started | - | - | - |
 
 ---
@@ -394,12 +394,24 @@ spaces_game/simultaneous_play_env.py
 - Stage 4 fog + self-play take 2 (quality controls): Partially recovered but oscillated 40-55%
 - Stage 4 fog + self-play take 3 (progressive window): Stopped at 660K/7.5M — level oscillation (hit level 2 three times, backtracked each time due to no min-step guard on backtracking)
 - Stage 4 fog + self-play take 4 (tuned thresholds): Stopped at 650K/10M — value network recalibration from curriculum reset (EV 0.17), volatile WR 30-85%
-- Stage 4 fog + self-play take 5 (all improvements): **Running** (Feb 17) — 10M steps, resumed from take 3 at 660K. Changes: skip curriculum reset, LR 1e-4, n-steps 4096, ent-coef 0.1, separate SP eval, Discord notifications
+- Stage 4 fog + self-play take 5 (all improvements): **Stopped** at 1.73M/10M — reached level 4, but plateaued at ~50% WR for 700K+ steps with declining explained variance (0.6 → 0.24). Best model saved at peak. Self-play at 5-opponent window too diverse for current architecture.
 
 ### Size 4 (Feb 2026)
 - Stage 3 pool-only: 2M steps, all 7 phases cleared, 100% valid rate
 - Stage 3 + self-play: ~78% win rate at 2.05M steps with pool mixing
 - 5 difficulty tiers saved in `models/size4/stage3/difficulty/`
+- Stage 4 fog pool-only: **Running** (Feb 18) — 10M steps, training from scratch. Plan: converge on pool opponents, then add self-play as separate run.
+
+### Size 3 Fog Self-Play: Next Steps (when revisiting)
+- **Cap max window level at 3** — level 4 (5 opponents) was too diverse for the current MLP. Let it converge deeper with fewer opponents before expanding.
+- **Larger network** — more capacity to represent diverse opponent strategies simultaneously. Default MLP may be undersized for fog + 5-opponent self-play.
+- **Longer eval windows** — 20+ episodes per eval instead of current amount. Reduces noise in advance/backtrack decisions, especially under fog.
+- **Resume from best model with lower LR** — the agent learned useful features through level 4. Fine-tuning from peak with a lower learning rate could extract more.
+
+### Deployment Plan
+- Once size 3 fog model is stable, deploy to inference server for real gameplay testing
+- Size 4 fog model next after pool convergence + self-play
+- Size 3 fog best model (`models/size3/stage4/best/best_model.zip`) available for deployment now — trained to level 4 self-play, ~65% peak pool WR
 
 ---
 
