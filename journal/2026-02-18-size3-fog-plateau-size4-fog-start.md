@@ -98,3 +98,28 @@ The size 3 fog best model is ready for deployment testing:
 Plan to deploy size 3 fog models to the inference server and test against real human play. This will give us ground truth on how the fog model performs beyond pool opponents and self-play metrics.
 
 Size 4 fog models will follow once pool training converges.
+
+---
+
+## Inference Server: Indexed Model Selection & Temperature Control
+
+With level_advancement models saved at each self-play level transition, the existing skill_level system (beginner/intermediate/advanced) was too rigid for experimentation. Two changes make all trained checkpoints accessible through the inference server.
+
+### Indexed Model Selection
+
+Added a `GET /models` endpoint that returns a flat indexed list of every discovered model — the standard skill-level checkpoints plus all `level_advancement/*.zip` files. Each entry includes board size, stage, label (from filename), path, and whether it uses fog.
+
+A new optional `model_index` field on `/construct-board` selects a specific model by index, bypassing the skill_level/agent_type lookup entirely. Board size is validated against the model's metadata. The existing skill_level flow is untouched when model_index is omitted.
+
+### Temperature-Controlled Stochasticity
+
+Previously, stochasticity was binary: deterministic (argmax) or not (sample from policy distribution). Added an optional `temperature` field (0.0-2.0) that gives fine-grained control over action sampling.
+
+The implementation reaches into SB3's policy internals — gets the action distribution via `policy.get_distribution()`, scales the logits by `1/temperature`, then samples via `torch.multinomial`. Action masks are preserved through the scaling (masked logits at -1e8 stay negligible at any temperature).
+
+- `temperature=0.0` or omitted: deterministic
+- `temperature=0.5`: sharper, more confident moves
+- `temperature=1.0`: standard stochastic (matches training distribution)
+- `temperature=1.5`: more exploratory, occasionally surprising boards
+
+This enables testing how different models behave across the confidence spectrum — useful for finding the sweet spot between predictable play and variety for human opponents.

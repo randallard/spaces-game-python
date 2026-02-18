@@ -322,6 +322,7 @@ async def construct_board(request: ConstructBoardRequest):
             opponent_pools=opponent_pools,
             deterministic=deterministic,
             use_fog=use_fog,
+            temperature=request.temperature,
         )
     except ValueError as e:
         if "observation shape" in str(e).lower():
@@ -356,6 +357,8 @@ async def construct_board(request: ConstructBoardRequest):
         "uses_masks": uses_masks,
         "model_board_size": model_board_size,
     }
+    if request.temperature is not None:
+        model_info["temperature"] = request.temperature
     if request.model_index is not None:
         model_meta = registry.get_indexed_models_info()[request.model_index]
         model_info["model_index"] = request.model_index

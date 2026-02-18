@@ -60,6 +60,12 @@ class ConstructBoardRequest(BaseModel):
         None,
         description="Direct model index (overrides skill_level/agent_type). See GET /models for available indices.",
     )
+    temperature: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature. None = use skill_level default, 0.0 = deterministic, 1.0 = standard stochastic, >1.0 = more random.",
+    )
 
 
 class MovePosition(BaseModel):

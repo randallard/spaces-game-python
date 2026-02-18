@@ -698,6 +698,32 @@ class TestModelIndexSelection:
             registry.get_model.assert_called_once()
             registry.get_model_by_index.assert_not_called()
 
+    def test_model_index_with_temperature(self, mock_registry):
+        """model_index with temperature passes temperature to build."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "model_index": 0,
+                    "temperature": 0.8,
+                })
+
+            assert response.status_code == 200
+            call_args = mock_build.call_args
+            assert call_args.kwargs["temperature"] == 0.8
+            data = response.json()
+            assert data["model_info"]["temperature"] == 0.8
+
     def test_model_index_fog_model_passes_use_fog(self, mock_registry):
         """model_index pointing to a fog model passes use_fog=True."""
         indexed = [
@@ -724,3 +750,92 @@ class TestModelIndexSelection:
             assert response.status_code == 200
             call_args = mock_build.call_args
             assert call_args.kwargs["use_fog"] is True
+
+
+# ---------------------------------------------------------------------------
+# Temperature field
+# ---------------------------------------------------------------------------
+
+class TestTemperature:
+
+    def test_temperature_passed_with_skill_level(self, mock_registry):
+        """Temperature works with skill_level flow too."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "skill_level": "advanced",
+                    "temperature": 1.5,
+                })
+
+            assert response.status_code == 200
+            call_args = mock_build.call_args
+            assert call_args.kwargs["temperature"] == 1.5
+            data = response.json()
+            assert data["model_info"]["temperature"] == 1.5
+
+    def test_no_temperature_passes_none(self, mock_registry):
+        """Omitting temperature passes None (uses deterministic from skill_level)."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                })
+
+            assert response.status_code == 200
+            call_args = mock_build.call_args
+            assert call_args.kwargs["temperature"] is None
+            data = response.json()
+            assert "temperature" not in data["model_info"]
+
+    def test_temperature_out_of_range_returns_422(self, mock_registry):
+        """Temperature > 2.0 is rejected by validation."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "temperature": 3.0,
+            })
+
+        assert response.status_code == 422
+
+    def test_temperature_negative_returns_422(self, mock_registry):
+        """Negative temperature is rejected by validation."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "temperature": -0.5,
+            })
+
+        assert response.status_code == 422

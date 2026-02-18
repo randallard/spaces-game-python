@@ -136,6 +136,48 @@ def discover_opponent_pools(board_size: int, boards_dir: str = "boards/") -> Lis
     return pools
 
 
+def predict_with_temperature(
+    model,
+    obs,
+    uses_masks: bool,
+    action_masks=None,
+    temperature: Optional[float] = None,
+) -> int:
+    """Predict an action with optional temperature-scaled sampling.
+
+    Args:
+        model: Loaded SB3 model (PPO or MaskablePPO).
+        obs: Current observation dict.
+        uses_masks: Whether the model uses MaskablePPO.
+        action_masks: Boolean action mask array (required if uses_masks).
+        temperature: Sampling temperature. None or 0.0 = deterministic,
+            1.0 = standard stochastic, >1 = more random, <1 = sharper.
+
+    Returns:
+        Selected action as an int.
+    """
+    if temperature is None or temperature == 0.0:
+        if uses_masks:
+            action, _ = model.predict(obs, deterministic=True, action_masks=action_masks)
+        else:
+            action, _ = model.predict(obs, deterministic=True)
+        return int(action)
+
+    import torch as th
+
+    obs_tensor, _ = model.policy.obs_to_tensor(obs)
+
+    if uses_masks and action_masks is not None:
+        distribution = model.policy.get_distribution(obs_tensor, action_masks=action_masks)
+    else:
+        distribution = model.policy.get_distribution(obs_tensor)
+
+    logits = distribution.distribution.logits / temperature
+    probs = th.softmax(logits, dim=-1)
+    action = th.multinomial(probs, num_samples=1).squeeze(-1)
+    return int(action.cpu().item())
+
+
 def build_board_for_round(
     model,
     uses_masks: bool,
@@ -148,6 +190,7 @@ def build_board_for_round(
     deterministic: bool = True,
     max_retries: int = 5,
     use_fog: bool = False,
+    temperature: Optional[float] = None,
 ) -> Tuple[Board, int]:
     """Have a Stage 3/4 agent build a board blind (simultaneous play).
 
@@ -164,9 +207,11 @@ def build_board_for_round(
         opponent_history_grids: numpy array of shape (5, board_size, board_size, 2)
             containing encoded opponent boards from previous rounds.
         opponent_pools: List of paths to opponent pool JSON files.
-        deterministic: If True, use deterministic prediction.
+        deterministic: If True, use deterministic prediction (ignored if temperature is set).
         max_retries: Maximum attempts to produce a valid board.
         use_fog: If True, create env with fog of war obs space (for stage4 models).
+        temperature: Optional sampling temperature. Overrides deterministic when set.
+            0.0 = deterministic, 1.0 = standard stochastic, >1 = more random.
 
     Returns:
         Tuple of (Board, attempts_used). Board may be invalid if all retries fail.
@@ -179,9 +224,12 @@ def build_board_for_round(
         use_fog=use_fog,
     )
 
+    # Temperature overrides the deterministic flag
+    use_deterministic = deterministic if temperature is None else (temperature == 0.0)
+
     board = None
     for attempt in range(max_retries):
-        seed = 42 + attempt if deterministic else random.randint(0, 100000)
+        seed = 42 + attempt if use_deterministic else random.randint(0, 100000)
         env.reset(seed=seed)
 
         # Override game state to match current round context
@@ -195,12 +243,19 @@ def build_board_for_round(
         for _ in range(max_steps):
             if uses_masks:
                 masks = env.action_masks()
-                action, _ = model.predict(obs, deterministic=deterministic, action_masks=masks)
             else:
-                action, _ = model.predict(obs, deterministic=deterministic)
+                masks = None
 
-            # Decode flat action
-            act = int(action)
+            if temperature is not None:
+                act = predict_with_temperature(
+                    model, obs, uses_masks, action_masks=masks, temperature=temperature,
+                )
+            else:
+                if uses_masks:
+                    action, _ = model.predict(obs, deterministic=deterministic, action_masks=masks)
+                else:
+                    action, _ = model.predict(obs, deterministic=deterministic)
+                act = int(action)
             n_cells = board_size * board_size
             if act >= 2 * n_cells:
                 break  # finish
