@@ -132,9 +132,13 @@ class DiscordNotifierCallback(BaseCallback):
         fields = [
             {"name": "Steps", "value": _format_steps(total_steps), "inline": True},
             {"name": "Duration", "value": f"{hours:.1f}h", "inline": True},
-            {"name": "Win Rate", "value": f"{win_rate:.0%}" if win_rate is not None else "N/A", "inline": True},
+            {"name": "Pool WR", "value": f"{win_rate:.0%}" if win_rate is not None else "N/A", "inline": True},
             {"name": "Phase", "value": f"{phase}/{max_phase}", "inline": True},
         ]
+
+        sp_wr = self._latest_sp_win_rate()
+        if sp_wr is not None:
+            fields.append({"name": "SP WR", "value": f"{sp_wr:.0%}", "inline": True})
 
         if self.self_play_callback is not None:
             fields.append({
@@ -167,29 +171,33 @@ class DiscordNotifierCallback(BaseCallback):
 
         if self._prev_phase is not None and current_phase != self._prev_phase:
             win_rate = self._latest_win_rate()
+            sp_wr = self._latest_sp_win_rate()
             steps = self.num_timesteps
 
+            wr_parts = []
+            if win_rate is not None:
+                wr_parts.append(f"Pool: {win_rate:.0%}")
+            if sp_wr is not None:
+                wr_parts.append(f"SP: {sp_wr:.0%}")
+            wr_str = ", ".join(wr_parts)
+
             if current_phase >= max_phase:
-                # All phases cleared
+                desc = f"All {max_phase + 1} phases cleared at {_format_steps(steps)} steps."
+                if wr_str:
+                    desc += f" {wr_str}"
                 embed = self._make_embed(
                     title="All Phases Cleared!",
-                    description=(
-                        f"All {max_phase + 1} phases cleared at {_format_steps(steps)} steps. "
-                        f"Win rate: {win_rate:.0%}" if win_rate is not None else
-                        f"All {max_phase + 1} phases cleared at {_format_steps(steps)} steps."
-                    ),
+                    description=desc,
                     color=self.COLOR_SUCCESS,
                 )
             else:
+                desc = (f"Advanced to phase {current_phase}/{max_phase} at "
+                        f"{_format_steps(steps)} steps.")
+                if wr_str:
+                    desc += f" {wr_str}"
                 embed = self._make_embed(
                     title=f"Phase Advanced: {self._prev_phase} → {current_phase}",
-                    description=(
-                        f"Advanced to phase {current_phase}/{max_phase} at "
-                        f"{_format_steps(steps)} steps. "
-                        f"Win rate: {win_rate:.0%}" if win_rate is not None else
-                        f"Advanced to phase {current_phase}/{max_phase} at "
-                        f"{_format_steps(steps)} steps."
-                    ),
+                    description=desc,
                     color=self.COLOR_INFO,
                 )
 
@@ -222,26 +230,30 @@ class DiscordNotifierCallback(BaseCallback):
         # Recovery state change
         if self._prev_in_recovery is not None and sp._in_recovery != self._prev_in_recovery:
             win_rate = self._latest_win_rate()
+            sp_wr = self._latest_sp_win_rate()
+            wr_parts = []
+            if win_rate is not None:
+                wr_parts.append(f"Pool: {win_rate:.0%}")
+            if sp_wr is not None:
+                wr_parts.append(f"SP: {sp_wr:.0%}")
+            wr_str = ", ".join(wr_parts)
+
             if sp._in_recovery:
+                desc = f"Switching to pool opponents at {_format_steps(steps)} steps."
+                if wr_str:
+                    desc = f"Win rate dropped ({wr_str}). " + desc
                 embed = self._make_embed(
                     title="Entered Pool Recovery",
-                    description=(
-                        f"Win rate dropped to {win_rate:.0%}. "
-                        f"Switching to pool opponents at {_format_steps(steps)} steps."
-                        if win_rate is not None else
-                        f"Switching to pool opponents at {_format_steps(steps)} steps."
-                    ),
+                    description=desc,
                     color=self.COLOR_DANGER,
                 )
             else:
+                desc = f"Resuming self-play at {_format_steps(steps)} steps."
+                if wr_str:
+                    desc = f"Win rate recovered ({wr_str}). " + desc
                 embed = self._make_embed(
                     title="Exited Pool Recovery",
-                    description=(
-                        f"Win rate recovered to {win_rate:.0%}. "
-                        f"Resuming self-play at {_format_steps(steps)} steps."
-                        if win_rate is not None else
-                        f"Resuming self-play at {_format_steps(steps)} steps."
-                    ),
+                    description=desc,
                     color=self.COLOR_SUCCESS,
                 )
             self._send_webhook(embed)
@@ -265,7 +277,11 @@ class DiscordNotifierCallback(BaseCallback):
             fields.append({"name": "Phase", "value": f"{phase}/{max_phase}", "inline": True})
 
         if win_rate is not None:
-            fields.append({"name": "Win Rate", "value": f"{win_rate:.0%}", "inline": True})
+            fields.append({"name": "Pool WR", "value": f"{win_rate:.0%}", "inline": True})
+
+        sp_wr = self._latest_sp_win_rate()
+        if sp_wr is not None:
+            fields.append({"name": "SP WR", "value": f"{sp_wr:.0%}", "inline": True})
 
         valid_rate = self._latest_valid_rate()
         if valid_rate is not None:
@@ -304,8 +320,14 @@ class DiscordNotifierCallback(BaseCallback):
         history = self.phase_callback.phase_history
 
         # Win rate trend (last 5 evals)
+        # Prefer SP win rate when self-play is active and SP data exists
         recent = history[-5:]
-        win_rates = [h["game_win_rate"] for h in recent]
+        use_sp = (self.self_play_callback is not None and
+                  any(h.get("sp_win_rate") is not None for h in recent))
+        if use_sp:
+            win_rates = [h.get("sp_win_rate", h["game_win_rate"]) for h in recent]
+        else:
+            win_rates = [h["game_win_rate"] for h in recent]
 
         if len(win_rates) >= 3:
             slope = win_rates[-1] - win_rates[0]
@@ -316,7 +338,10 @@ class DiscordNotifierCallback(BaseCallback):
             else:
                 # Check for plateau
                 if len(history) >= 10:
-                    older = [h["game_win_rate"] for h in history[-10:-5]]
+                    if use_sp:
+                        older = [h.get("sp_win_rate", h["game_win_rate"]) for h in history[-10:-5]]
+                    else:
+                        older = [h["game_win_rate"] for h in history[-10:-5]]
                     older_avg = sum(older) / len(older) if older else 0
                     recent_avg = sum(win_rates) / len(win_rates)
                     if abs(recent_avg - older_avg) < 0.03:
@@ -369,8 +394,15 @@ class DiscordNotifierCallback(BaseCallback):
         return parts[0]
 
     def _latest_win_rate(self) -> Optional[float]:
+        """Latest pool win rate from phase_history."""
         if self.phase_callback and self.phase_callback.phase_history:
             return self.phase_callback.phase_history[-1]["game_win_rate"]
+        return None
+
+    def _latest_sp_win_rate(self) -> Optional[float]:
+        """Latest self-play eval win rate, or None if no SP data."""
+        if self.self_play_callback and self.self_play_callback._sp_win_rate is not None:
+            return self.self_play_callback._sp_win_rate
         return None
 
     def _latest_valid_rate(self) -> Optional[float]:

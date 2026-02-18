@@ -47,12 +47,13 @@ def _make_phase_callback(current_phase=0, max_phase=6, phase_history=None):
     return mock
 
 
-def _make_self_play_callback(window_level=0, in_recovery=False, snapshot_paths=None):
+def _make_self_play_callback(window_level=0, in_recovery=False, snapshot_paths=None, sp_win_rate=None):
     """Create a mock SelfPlayCurriculumCallback."""
     mock = MagicMock()
     mock.window_level = window_level
     mock._in_recovery = in_recovery
     mock.snapshot_paths = snapshot_paths or []
+    mock._sp_win_rate = sp_win_rate
     return mock
 
 
@@ -349,7 +350,7 @@ class TestEmbedFormatting:
         assert "Fog+Self-Play" in embed["title"]
         field_names = [f["name"] for f in embed["fields"]]
         assert "Steps" in field_names
-        assert "Win Rate" in field_names
+        assert "Pool WR" in field_names
         assert "Self-Play Level" in field_names
 
 

@@ -304,13 +304,15 @@ class SelfPlayCurriculumCallback(BaseCallback):
         """Save model snapshot if quality gate passes, and assign to training envs."""
         self._last_snapshot_step = self.n_calls
 
-        # Quality gate: only snapshot if pool win rate is above threshold
+        # Quality gate: prefer SP eval win rate when available, fall back to pool
         pool_win_rate = self._get_latest_pool_win_rate()
-        if pool_win_rate < self.snapshot_win_rate:
+        gate_win_rate = self._sp_win_rate if self._sp_win_rate is not None else pool_win_rate
+        gate_label = "SP eval" if self._sp_win_rate is not None else "pool"
+        if gate_win_rate < self.snapshot_win_rate:
             if self.verbose >= 1:
                 state = "RECOVERY" if self._in_recovery else f"LEVEL {self.window_level}"
-                print(f"  SELF-PLAY [{state}]: Snapshot skipped — pool win rate "
-                      f"{pool_win_rate:.1%} < {self.snapshot_win_rate:.1%}")
+                print(f"  SELF-PLAY [{state}]: Snapshot skipped — {gate_label} win rate "
+                      f"{gate_win_rate:.1%} < {self.snapshot_win_rate:.1%}")
             # Still assign opponents from existing pool
             if not self._in_recovery:
                 self._assign_opponents()
@@ -332,7 +334,7 @@ class SelfPlayCurriculumCallback(BaseCallback):
         if self.verbose >= 1:
             state = "RECOVERY" if self._in_recovery else f"LEVEL {self.window_level}"
             print(f"  SELF-PLAY [{state}]: Snapshot saved ({len(self.snapshot_paths)} in pool, "
-                  f"win rate {pool_win_rate:.1%})")
+                  f"{gate_label} WR {gate_win_rate:.1%})")
 
         # Assign opponents (only during active self-play, not recovery)
         if not self._in_recovery:
@@ -367,12 +369,16 @@ class SelfPlayCurriculumCallback(BaseCallback):
                     print(f"  Warning: Could not set opponent model for env {i}: {e}")
 
     def _check_skill_milestones(self):
-        """Check phase callback's eval win rate and save skill checkpoints."""
+        """Check eval win rate and save skill checkpoints.
+
+        Prefers SP eval win rate when available, falls back to pool win rate.
+        """
         if self.phase_callback is None or not self.phase_callback.phase_history:
             return
 
         latest = self.phase_callback.phase_history[-1]
-        win_rate = latest.get("game_win_rate", 0.0)
+        pool_win_rate = latest.get("game_win_rate", 0.0)
+        win_rate = self._sp_win_rate if self._sp_win_rate is not None else pool_win_rate
 
         if win_rate <= self._best_win_rate:
             return

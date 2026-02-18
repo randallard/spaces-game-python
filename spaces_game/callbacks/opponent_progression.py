@@ -116,7 +116,10 @@ class OpponentProgressionCallback(BaseCallback):
 
         if self.verbose >= 1:
             ties = self.eval_episodes - game_wins - game_losses
-            print(f"  Game wins:  {game_win_rate:.1%} ({game_wins}W/{game_losses}L/{ties}T)")
+            print(f"  Pool wins:  {game_win_rate:.1%} ({game_wins}W/{game_losses}L/{ties}T)")
+            if (self.self_play_callback is not None and
+                    self.self_play_callback._sp_win_rate is not None):
+                print(f"  SP eval:    {self.self_play_callback._sp_win_rate:.1%}")
             print(f"  Valid rate: {valid_rate:.1%} ({total_rounds_valid}/{total_rounds} rounds)")
             print(f"  Avg reward: {avg_reward:.2f}")
             if self.self_play_callback is not None:
@@ -139,6 +142,7 @@ class OpponentProgressionCallback(BaseCallback):
             "game_win_rate": game_win_rate,
             "valid_rate": valid_rate,
             "avg_reward": avg_reward,
+            "sp_win_rate": self.self_play_callback._sp_win_rate if self.self_play_callback else None,
         })
 
         if self.verbose >= 1:
