@@ -70,6 +70,12 @@ class ModelRegistry:
         # Opponent pools cache: board_size -> list of pool paths
         self._opponent_pools: Dict[int, List[str]] = {}
 
+        # Flat indexed list of all models (skill-level + level_advancement)
+        self._indexed_models: List[dict] = []
+
+        # Cache for indexed models: index -> (model, uses_masks)
+        self._indexed_model_cache: Dict[int, Tuple[object, bool]] = {}
+
     def discover_models(self) -> None:
         """Scan models_dir for available models and populate the path registry."""
         base = Path(self.models_dir)
@@ -106,6 +112,9 @@ class ModelRegistry:
                 if board_size not in self._board_sizes:
                     self._board_sizes.append(board_size)
                 self._stages_by_size[board_size] = stages_found
+
+        # Build the flat indexed list from all discovered models
+        self._build_indexed_models()
 
         # Discover opponent pools for each board size
         for board_size in self._board_sizes:
@@ -272,6 +281,94 @@ class ModelRegistry:
             List of JSON file paths for opponent pools.
         """
         return self._opponent_pools.get(board_size, [])
+
+    def _build_indexed_models(self) -> None:
+        """Build a flat indexed list of all discovered models.
+
+        Includes skill-level checkpoints (early/mid/advanced) and
+        level_advancement models from each stage directory.
+        """
+        self._indexed_models = []
+        seen_paths: set = set()
+
+        # First, add skill-level checkpoints (deduplicated by path)
+        for (board_size, stage, checkpoint_type), path in sorted(self._model_paths.items()):
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            use_fog = stage == "stage4"
+            label = Path(path).stem  # e.g., "beginner", "expert", "ppo_100000_steps"
+            self._indexed_models.append({
+                "index": len(self._indexed_models),
+                "board_size": board_size,
+                "stage": stage,
+                "label": label,
+                "path": path,
+                "use_fog": use_fog,
+            })
+
+        # Then, scan level_advancement/ subdirectories
+        base = Path(self.models_dir)
+        for size_dir in sorted(base.glob("size*")):
+            if not size_dir.is_dir():
+                continue
+            match = re.match(r"size(\d+)", size_dir.name)
+            if not match:
+                continue
+            board_size = int(match.group(1))
+
+            for stage in ["stage3", "stage4"]:
+                la_dir = size_dir / stage / "level_advancement"
+                if not la_dir.is_dir():
+                    continue
+
+                for zip_file in sorted(la_dir.glob("*.zip")):
+                    path_str = str(zip_file)
+                    if path_str in seen_paths:
+                        continue
+                    seen_paths.add(path_str)
+                    use_fog = stage == "stage4"
+                    self._indexed_models.append({
+                        "index": len(self._indexed_models),
+                        "board_size": board_size,
+                        "stage": stage,
+                        "label": zip_file.stem,
+                        "path": path_str,
+                        "use_fog": use_fog,
+                    })
+
+        logger.info("Indexed %d total models", len(self._indexed_models))
+
+    def get_model_by_index(self, index: int) -> Tuple[object, bool, bool]:
+        """Get a model by its flat index.
+
+        Args:
+            index: The model index from the indexed list.
+
+        Returns:
+            Tuple of (model, uses_masks, use_fog).
+
+        Raises:
+            IndexError: If the index is out of range.
+        """
+        if index < 0 or index >= len(self._indexed_models):
+            raise IndexError(
+                f"Model index {index} out of range. "
+                f"Available: 0-{len(self._indexed_models) - 1}"
+            )
+
+        if index not in self._indexed_model_cache:
+            entry = self._indexed_models[index]
+            model, uses_masks = load_agent(entry["path"])
+            self._indexed_model_cache[index] = (model, uses_masks)
+
+        model, uses_masks = self._indexed_model_cache[index]
+        use_fog = self._indexed_models[index]["use_fog"]
+        return model, uses_masks, use_fog
+
+    def get_indexed_models_info(self) -> List[dict]:
+        """Return the flat indexed list of all discovered models."""
+        return self._indexed_models
 
     def get_loaded_models_info(self) -> dict:
         """Get summary of all loaded models for the /info endpoint.

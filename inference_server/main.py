@@ -100,6 +100,12 @@ async def info():
     )
 
 
+@app.get("/models")
+async def list_models():
+    """Return a flat indexed list of all available models."""
+    return registry.get_indexed_models_info()
+
+
 def _convert_opponent_history_to_grids(
     opponent_history: list,
     board_size: int,
@@ -228,31 +234,53 @@ async def construct_board(request: ConstructBoardRequest):
             model_info={"skill_level": "test_fail"},
         )
 
-    # Validate board size is supported
-    if board_size not in registry.supported_board_sizes:
-        if not registry.supported_board_sizes:
-            raise HTTPException(
-                status_code=503,
-                detail="No models are loaded. Train models first and restart the server.",
-            )
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Board size {board_size} not supported. "
-                f"Available sizes: {registry.supported_board_sizes}"
-            ),
-        )
+    # Route: model_index overrides skill_level/agent_type
+    if request.model_index is not None:
+        try:
+            model, uses_masks, use_fog = registry.get_model_by_index(request.model_index)
+        except IndexError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
-    # Get model for skill level and agent type
-    agent_type = request.agent_type.value
-    try:
-        model, uses_masks, deterministic = registry.get_model(
-            board_size, skill_level, agent_type=agent_type,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        model_meta = registry.get_indexed_models_info()[request.model_index]
+        agent_type = "fog" if use_fog else "standard"
+        deterministic = True
+
+        # Validate board_size matches the model
+        if model_meta["board_size"] != board_size:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Board size {board_size} does not match model's board size "
+                    f"{model_meta['board_size']} (index {request.model_index})."
+                ),
+            )
+    else:
+        # Validate board size is supported
+        if board_size not in registry.supported_board_sizes:
+            if not registry.supported_board_sizes:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No models are loaded. Train models first and restart the server.",
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Board size {board_size} not supported. "
+                    f"Available sizes: {registry.supported_board_sizes}"
+                ),
+            )
+
+        # Get model for skill level and agent type
+        agent_type = request.agent_type.value
+        use_fog = agent_type == "fog"
+        try:
+            model, uses_masks, deterministic = registry.get_model(
+                board_size, skill_level, agent_type=agent_type,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     # Verify it's a simultaneous play model (both stage3 and stage4 have opponent_history)
     if not is_stage3_model(model):
@@ -293,7 +321,7 @@ async def construct_board(request: ConstructBoardRequest):
             opponent_history_grids=opponent_history_grids,
             opponent_pools=opponent_pools,
             deterministic=deterministic,
-            use_fog=(agent_type == "fog"),
+            use_fog=use_fog,
         )
     except ValueError as e:
         if "observation shape" in str(e).lower():
@@ -328,6 +356,10 @@ async def construct_board(request: ConstructBoardRequest):
         "uses_masks": uses_masks,
         "model_board_size": model_board_size,
     }
+    if request.model_index is not None:
+        model_meta = registry.get_indexed_models_info()[request.model_index]
+        model_info["model_index"] = request.model_index
+        model_info["label"] = model_meta["label"]
 
     return ConstructBoardResponse(
         board=_board_to_response_dict(board),

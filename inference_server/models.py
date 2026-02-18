@@ -56,6 +56,10 @@ class ConstructBoardRequest(BaseModel):
         default=AgentType.standard,
         description="Agent type: 'standard' (full reveal) or 'fog' (fog of war)",
     )
+    model_index: Optional[int] = Field(
+        None,
+        description="Direct model index (overrides skill_level/agent_type). See GET /models for available indices.",
+    )
 
 
 class MovePosition(BaseModel):

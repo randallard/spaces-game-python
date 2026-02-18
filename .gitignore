@@ -76,6 +76,8 @@ models/size*/stage4/*
 !models/size*/stage4/beginner.zip
 !models/size*/stage4/intermediate.zip
 !models/size*/stage4/expert.zip
+!models/size*/stage4/level_advancement/
+!models/size*/stage4/level_advancement/*.zip
 
 # Evaluation data
 eval/

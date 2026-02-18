@@ -32,18 +32,24 @@ def _make_valid_board(board_size: int = 2) -> Board:
     return Board(boardSize=board_size, grid=grid, sequence=sequence)
 
 
-def _create_mock_registry(board_sizes=None, agent_types=None):
+def _create_mock_registry(board_sizes=None, agent_types=None, indexed_models=None):
     """Create a mock ModelRegistry.
 
     Args:
         board_sizes: List of supported board sizes.
         agent_types: Dict mapping board_size -> list of agent types.
             Defaults to ["standard"] for each size.
+        indexed_models: Optional list of indexed model dicts for GET /models.
     """
     if board_sizes is None:
         board_sizes = [2]
     if agent_types is None:
         agent_types = {s: ["standard"] for s in board_sizes}
+    if indexed_models is None:
+        indexed_models = [
+            {"index": 0, "board_size": 2, "stage": "stage3", "label": "beginner", "path": "models/size2/stage3/beginner.zip", "use_fog": False},
+            {"index": 1, "board_size": 2, "stage": "stage3", "label": "expert", "path": "models/size2/stage3/expert.zip", "use_fog": False},
+        ]
 
     mock_registry = MagicMock()
     mock_registry.supported_board_sizes = board_sizes
@@ -59,6 +65,7 @@ def _create_mock_registry(board_sizes=None, agent_types=None):
                 {"checkpoint": "advanced", "path": f"models/size{s}/{stage}/model.zip"}
             ]
     mock_registry.get_loaded_models_info.return_value = loaded_models
+    mock_registry.get_indexed_models_info.return_value = indexed_models
 
     def _get_available_agent_types(board_size):
         return agent_types.get(board_size, ["standard"])
@@ -73,6 +80,7 @@ def _create_mock_registry(board_sizes=None, agent_types=None):
     }
 
     mock_registry.get_model.return_value = (mock_model, True, True)
+    mock_registry.get_model_by_index.return_value = (mock_model, True, False)
     mock_registry.get_opponent_pools.return_value = ["boards/size2/simple.json"]
 
     return mock_registry, mock_model
@@ -550,3 +558,169 @@ class TestCORS:
             },
         )
         assert "POST" in response.headers.get("access-control-allow-methods", "")
+
+
+# ---------------------------------------------------------------------------
+# GET /models endpoint
+# ---------------------------------------------------------------------------
+
+class TestModelsEndpoint:
+
+    def test_models_returns_indexed_list(self, mock_registry):
+        """GET /models returns the flat indexed list."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.get("/models")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+        assert data[0]["index"] == 0
+        assert data[0]["board_size"] == 2
+        assert data[0]["label"] == "beginner"
+        assert data[1]["index"] == 1
+
+    def test_models_includes_fog_info(self):
+        """GET /models includes use_fog field."""
+        indexed = [
+            {"index": 0, "board_size": 3, "stage": "stage3", "label": "expert", "path": "p", "use_fog": False},
+            {"index": 1, "board_size": 3, "stage": "stage4", "label": "level0_before_50k", "path": "p2", "use_fog": True},
+        ]
+        registry, _ = _create_mock_registry(board_sizes=[3], indexed_models=indexed)
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.get("/models")
+
+        data = response.json()
+        assert data[0]["use_fog"] is False
+        assert data[1]["use_fog"] is True
+
+
+# ---------------------------------------------------------------------------
+# model_index in construct-board
+# ---------------------------------------------------------------------------
+
+class TestModelIndexSelection:
+
+    def test_model_index_selects_model(self, mock_registry):
+        """model_index bypasses skill_level and uses get_model_by_index."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)), \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "model_index": 0,
+                })
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["model_info"]["model_index"] == 0
+            assert data["model_info"]["label"] == "beginner"
+            # get_model_by_index should be called, not get_model
+            registry.get_model_by_index.assert_called_once_with(0)
+            registry.get_model.assert_not_called()
+
+    def test_model_index_out_of_range_returns_404(self, mock_registry):
+        """model_index out of range returns 404."""
+        registry, _ = mock_registry
+        registry.get_model_by_index.side_effect = IndexError("Model index 99 out of range. Available: 0-1")
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "model_index": 99,
+            })
+
+        assert response.status_code == 404
+        assert "out of range" in response.json()["detail"]
+
+    def test_model_index_board_size_mismatch_returns_400(self, mock_registry):
+        """model_index with wrong board_size returns 400."""
+        registry, model = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            # Model at index 0 is board_size=2, but request says board_size=3
+            response = client.post("/construct-board", json={
+                "board_size": 3,
+                "round_num": 0,
+                "model_index": 0,
+            })
+
+        assert response.status_code == 400
+        assert "does not match" in response.json()["detail"]
+
+    def test_without_model_index_uses_skill_level(self, mock_registry):
+        """Request without model_index still uses skill_level flow."""
+        registry, model = mock_registry
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)), \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "skill_level": "advanced",
+                })
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "model_index" not in data["model_info"]
+            registry.get_model.assert_called_once()
+            registry.get_model_by_index.assert_not_called()
+
+    def test_model_index_fog_model_passes_use_fog(self, mock_registry):
+        """model_index pointing to a fog model passes use_fog=True."""
+        indexed = [
+            {"index": 0, "board_size": 2, "stage": "stage4", "label": "level0_before_50k", "path": "p", "use_fog": True},
+        ]
+        registry, model = _create_mock_registry(board_sizes=[2], indexed_models=indexed)
+        registry.get_model_by_index.return_value = (model, True, True)  # use_fog=True
+        valid_board = _make_valid_board(2)
+
+        with patch("inference_server.main.is_stage3_model", return_value=True), \
+             patch("inference_server.main.build_board_for_round", return_value=(valid_board, 1)) as mock_build, \
+             patch("inference_server.main.get_model_board_size", return_value=2):
+
+            from inference_server.main import app
+            import inference_server.main as main_mod
+            with TestClient(app, raise_server_exceptions=False) as client:
+                main_mod.registry = registry
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "model_index": 0,
+                })
+
+            assert response.status_code == 200
+            call_args = mock_build.call_args
+            assert call_args.kwargs["use_fog"] is True
