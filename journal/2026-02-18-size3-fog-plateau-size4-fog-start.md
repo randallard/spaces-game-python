@@ -182,3 +182,9 @@ python examples/train_simultaneous.py \
 ```
 
 Size 6 has 36 cells — biggest board yet. Expect slower phase progression and longer convergence than size 5 (25 cells).
+
+### Size 6 Fog Pool-Only: Results
+
+All 7 phases cleared by ~1.5M steps — faster than expected for 36-cell boards. Win rate oscillated 55-80% at phase 6 with avg ~65%. EV bounced 0.14-0.50. Cut at 4.1M steps — WR was not trending upward over the last 2M steps, oscillating in the 60-70% band. Same plateau pattern as earlier sizes.
+
+Production models (beginner/intermediate/expert) deployed to `models/size6/stage4/`. Self-play training started from best pool model with `--resume`.
