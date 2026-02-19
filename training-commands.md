@@ -1,6 +1,14 @@
 ```
 
+# install spaces-game and source .venv/bin/activate I think
 
+cp -R boards/size4 boards/size5 && cd boards/size5
+
+>00 && >01 && >02 && >03
+
+#create boards and move to boards directory
+spaces-game test -i --size5 # do a few boards this way
+mv board_size_5.json boards
 
 
 python examples/train_simultaneous.py --size 5 --fog --self-play \
