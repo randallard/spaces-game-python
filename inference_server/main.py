@@ -234,8 +234,27 @@ async def construct_board(request: ConstructBoardRequest):
             model_info={"skill_level": "test_fail"},
         )
 
-    # Route: model_index overrides skill_level/agent_type
-    if request.model_index is not None:
+    # Route: model_id > model_index > skill_level
+    if request.model_id is not None:
+        try:
+            model, uses_masks, use_fog = registry.get_model_by_id(request.model_id)
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+        model_meta = registry.get_model_meta_by_id(request.model_id)
+        agent_type = "fog" if use_fog else "standard"
+        deterministic = True
+
+        # Validate board_size matches the model
+        if model_meta["board_size"] != board_size:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Board size {board_size} does not match model's board size "
+                    f"{model_meta['board_size']} (model_id {request.model_id})."
+                ),
+            )
+    elif request.model_index is not None:
         try:
             model, uses_masks, use_fog = registry.get_model_by_index(request.model_index)
         except IndexError as e:
@@ -359,7 +378,11 @@ async def construct_board(request: ConstructBoardRequest):
     }
     if request.temperature is not None:
         model_info["temperature"] = request.temperature
-    if request.model_index is not None:
+    if request.model_id is not None:
+        model_meta = registry.get_model_meta_by_id(request.model_id)
+        model_info["model_id"] = request.model_id
+        model_info["label"] = model_meta["label"]
+    elif request.model_index is not None:
         model_meta = registry.get_indexed_models_info()[request.model_index]
         model_info["model_index"] = request.model_index
         model_info["label"] = model_meta["label"]

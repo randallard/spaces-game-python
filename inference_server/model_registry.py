@@ -5,6 +5,7 @@ Handles convention-based discovery of model checkpoints and provides
 a cache of loaded models keyed by (board_size, stage, checkpoint_type).
 """
 
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -30,6 +31,15 @@ AGENT_TYPE_TO_STAGE: Dict[str, str] = {
     "standard": "stage3",
     "fog": "stage4",
 }
+
+
+def generate_model_id(board_size: int, stage: str, label: str) -> str:
+    """Generate a stable, short model ID from board_size, stage, and label.
+
+    Uses first 8 hex chars of SHA256("{board_size}:{stage}:{label}").
+    """
+    key = f"{board_size}:{stage}:{label}"
+    return hashlib.sha256(key.encode()).hexdigest()[:8]
 
 
 def _extract_step_count(filename: str) -> Optional[int]:
@@ -72,6 +82,9 @@ class ModelRegistry:
 
         # Flat indexed list of all models (skill-level + level_advancement)
         self._indexed_models: List[dict] = []
+
+        # Reverse lookup: model_id -> index
+        self._model_id_to_index: Dict[str, int] = {}
 
         # Cache for indexed models: index -> (model, uses_masks)
         self._indexed_model_cache: Dict[int, Tuple[object, bool]] = {}
@@ -287,9 +300,25 @@ class ModelRegistry:
 
         Includes skill-level checkpoints (early/mid/advanced) and
         level_advancement models from each stage directory.
+        Each entry gets a stable `model_id` (8-char hex hash).
         """
         self._indexed_models = []
+        self._model_id_to_index = {}
         seen_paths: set = set()
+
+        def _add_model(board_size: int, stage: str, label: str, path: str, use_fog: bool) -> None:
+            model_id = generate_model_id(board_size, stage, label)
+            idx = len(self._indexed_models)
+            self._indexed_models.append({
+                "index": idx,
+                "model_id": model_id,
+                "board_size": board_size,
+                "stage": stage,
+                "label": label,
+                "path": path,
+                "use_fog": use_fog,
+            })
+            self._model_id_to_index[model_id] = idx
 
         # First, add skill-level checkpoints (deduplicated by path)
         for (board_size, stage, checkpoint_type), path in sorted(self._model_paths.items()):
@@ -298,14 +327,7 @@ class ModelRegistry:
             seen_paths.add(path)
             use_fog = stage == "stage4"
             label = Path(path).stem  # e.g., "beginner", "expert", "ppo_100000_steps"
-            self._indexed_models.append({
-                "index": len(self._indexed_models),
-                "board_size": board_size,
-                "stage": stage,
-                "label": label,
-                "path": path,
-                "use_fog": use_fog,
-            })
+            _add_model(board_size, stage, label, path, use_fog)
 
         # Then, scan level_advancement/ subdirectories
         base = Path(self.models_dir)
@@ -328,14 +350,7 @@ class ModelRegistry:
                         continue
                     seen_paths.add(path_str)
                     use_fog = stage == "stage4"
-                    self._indexed_models.append({
-                        "index": len(self._indexed_models),
-                        "board_size": board_size,
-                        "stage": stage,
-                        "label": zip_file.stem,
-                        "path": path_str,
-                        "use_fog": use_fog,
-                    })
+                    _add_model(board_size, stage, zip_file.stem, path_str, use_fog)
 
         logger.info("Indexed %d total models", len(self._indexed_models))
 
@@ -365,6 +380,46 @@ class ModelRegistry:
         model, uses_masks = self._indexed_model_cache[index]
         use_fog = self._indexed_models[index]["use_fog"]
         return model, uses_masks, use_fog
+
+    def get_model_by_id(self, model_id: str) -> Tuple[object, bool, bool]:
+        """Get a model by its stable model ID.
+
+        Args:
+            model_id: The 8-char hex model ID.
+
+        Returns:
+            Tuple of (model, uses_masks, use_fog).
+
+        Raises:
+            KeyError: If the model_id is not found.
+        """
+        if model_id not in self._model_id_to_index:
+            raise KeyError(
+                f"Unknown model_id: {model_id}. "
+                f"Available IDs: {list(self._model_id_to_index.keys())}"
+            )
+        index = self._model_id_to_index[model_id]
+        return self.get_model_by_index(index)
+
+    def get_model_meta_by_id(self, model_id: str) -> dict:
+        """Get model metadata by its stable model ID.
+
+        Args:
+            model_id: The 8-char hex model ID.
+
+        Returns:
+            The metadata dict for the model.
+
+        Raises:
+            KeyError: If the model_id is not found.
+        """
+        if model_id not in self._model_id_to_index:
+            raise KeyError(
+                f"Unknown model_id: {model_id}. "
+                f"Available IDs: {list(self._model_id_to_index.keys())}"
+            )
+        index = self._model_id_to_index[model_id]
+        return self._indexed_models[index]
 
     def get_indexed_models_info(self) -> List[dict]:
         """Return the flat indexed list of all discovered models."""

@@ -12,12 +12,46 @@ from inference_server.model_registry import (
     ModelRegistry,
     SKILL_LEVEL_CONFIG,
     _extract_step_count,
+    generate_model_id,
 )
 
 
 # ---------------------------------------------------------------------------
 # _extract_step_count tests
 # ---------------------------------------------------------------------------
+
+class TestGenerateModelId:
+
+    def test_deterministic(self):
+        """Same inputs always produce the same ID."""
+        id1 = generate_model_id(3, "stage3", "my_model")
+        id2 = generate_model_id(3, "stage3", "my_model")
+        assert id1 == id2
+
+    def test_length(self):
+        """Model ID should be exactly 8 hex characters."""
+        model_id = generate_model_id(3, "stage3", "my_model")
+        assert len(model_id) == 8
+        assert all(c in "0123456789abcdef" for c in model_id)
+
+    def test_uniqueness_different_sizes(self):
+        """Different board sizes produce different IDs."""
+        id1 = generate_model_id(2, "stage3", "my_model")
+        id2 = generate_model_id(3, "stage3", "my_model")
+        assert id1 != id2
+
+    def test_uniqueness_different_stages(self):
+        """Different stages produce different IDs."""
+        id1 = generate_model_id(3, "stage3", "my_model")
+        id2 = generate_model_id(3, "stage4", "my_model")
+        assert id1 != id2
+
+    def test_uniqueness_different_labels(self):
+        """Different labels produce different IDs."""
+        id1 = generate_model_id(3, "stage3", "model_a")
+        id2 = generate_model_id(3, "stage3", "model_b")
+        assert id1 != id2
+
 
 class TestExtractStepCount:
 
@@ -261,6 +295,78 @@ class TestModelRegistryGetModel:
 
         with pytest.raises(KeyError, match="No model available"):
             registry.get_model(5, "beginner")
+
+    def test_get_model_by_id_happy_path(self):
+        """Test looking up a model by its stable ID."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stage3_dir = Path(tmpdir) / "size2" / "stage3"
+            stage3_dir.mkdir(parents=True)
+            (stage3_dir / "model.zip").write_bytes(b"fake")
+
+            boards_dir = Path(tmpdir) / "boards"
+            size2_boards = boards_dir / "size2"
+            size2_boards.mkdir(parents=True)
+            (size2_boards / "simple.json").write_text("[]")
+
+            registry = ModelRegistry(
+                models_dir=str(Path(tmpdir)),
+                boards_dir=str(boards_dir),
+            )
+            registry.discover_models()
+
+            # Get the model_id from indexed models
+            models = registry.get_indexed_models_info()
+            assert len(models) > 0
+            model_id = models[0]["model_id"]
+            assert len(model_id) == 8
+
+            # Verify model_id reverse lookup works
+            meta = registry.get_model_meta_by_id(model_id)
+            assert meta["board_size"] == 2
+            assert meta["model_id"] == model_id
+
+    def test_get_model_by_id_unknown(self):
+        """Test that unknown model_id raises KeyError."""
+        registry = ModelRegistry()
+        registry._build_indexed_models()
+
+        with pytest.raises(KeyError, match="Unknown model_id"):
+            registry.get_model_by_id("deadbeef")
+
+    def test_get_model_meta_by_id_unknown(self):
+        """Test that unknown model_id raises KeyError for meta."""
+        registry = ModelRegistry()
+        registry._build_indexed_models()
+
+        with pytest.raises(KeyError, match="Unknown model_id"):
+            registry.get_model_meta_by_id("deadbeef")
+
+    def test_indexed_models_have_model_id(self):
+        """Test that all indexed models include a model_id field."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stage3_dir = Path(tmpdir) / "size3" / "stage3"
+            stage3_dir.mkdir(parents=True)
+            (stage3_dir / "model_early.zip").write_bytes(b"fake")
+            (stage3_dir / "model_mid.zip").write_bytes(b"fake")
+            (stage3_dir / "best_model.zip").write_bytes(b"fake")
+
+            boards_dir = Path(tmpdir) / "boards"
+
+            registry = ModelRegistry(
+                models_dir=str(Path(tmpdir)),
+                boards_dir=str(boards_dir),
+            )
+            registry.discover_models()
+
+            models = registry.get_indexed_models_info()
+            assert len(models) == 3
+            ids = set()
+            for m in models:
+                assert "model_id" in m
+                assert len(m["model_id"]) == 8
+                ids.add(m["model_id"])
+            # All IDs should be unique
+            assert len(ids) == 3
 
     def test_get_loaded_models_info(self):
         """Test the info endpoint data format."""
