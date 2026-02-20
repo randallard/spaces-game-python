@@ -1,0 +1,564 @@
+[
+  {
+    "boardSize": 7,
+    "grid": [
+      [
+        "empty",
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "trap",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "trap",
+        "piece",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 6,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 5,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 5
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 6
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 7
+      },
+      {
+        "position": {
+          "row": 2,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 8
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 9
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 10
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 2
+        },
+        "type": "final",
+        "order": 11
+      }
+    ]
+  },
+  {
+    "boardSize": 7,
+    "grid": [
+      [
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "piece",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "piece",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "piece",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "trap",
+        "trap",
+        "piece",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "trap",
+        "piece",
+        "piece",
+        "piece",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "piece",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "trap",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 6,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 6,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 5,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 1
+        },
+        "type": "trap",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": 5,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 5
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 6
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 2
+        },
+        "type": "trap",
+        "order": 7
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 3
+        },
+        "type": "piece",
+        "order": 8
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 3
+        },
+        "type": "trap",
+        "order": 9
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 10
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 11
+      },
+      {
+        "position": {
+          "row": 2,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 12
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 13
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 14
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 4
+        },
+        "type": "final",
+        "order": 15
+      }
+    ]
+  },
+  {
+    "boardSize": 7,
+    "grid": [
+      [
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "piece",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "piece",
+        "trap",
+        "trap",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "trap",
+        "piece",
+        "piece",
+        "piece",
+        "trap",
+        "empty",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "empty",
+        "piece",
+        "piece",
+        "trap",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "piece",
+        "piece",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "piece",
+        "trap"
+      ]
+    ],
+    "sequence": [
+      {
+        "position": {
+          "row": 6,
+          "col": 5
+        },
+        "type": "piece",
+        "order": 1
+      },
+      {
+        "position": {
+          "row": 6,
+          "col": 6
+        },
+        "type": "trap",
+        "order": 2
+      },
+      {
+        "position": {
+          "row": 5,
+          "col": 5
+        },
+        "type": "piece",
+        "order": 3
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 5
+        },
+        "type": "trap",
+        "order": 4
+      },
+      {
+        "position": {
+          "row": 5,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 5
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 4
+        },
+        "type": "piece",
+        "order": 6
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 4
+        },
+        "type": "trap",
+        "order": 7
+      },
+      {
+        "position": {
+          "row": 4,
+          "col": 3
+        },
+        "type": "piece",
+        "order": 8
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 3
+        },
+        "type": "piece",
+        "order": 9
+      },
+      {
+        "position": {
+          "row": 2,
+          "col": 3
+        },
+        "type": "trap",
+        "order": 10
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 2
+        },
+        "type": "piece",
+        "order": 11
+      },
+      {
+        "position": {
+          "row": 2,
+          "col": 2
+        },
+        "type": "trap",
+        "order": 12
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 13
+      },
+      {
+        "position": {
+          "row": 3,
+          "col": 0
+        },
+        "type": "trap",
+        "order": 14
+      },
+      {
+        "position": {
+          "row": 2,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 15
+      },
+      {
+        "position": {
+          "row": 1,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 16
+      },
+      {
+        "position": {
+          "row": 0,
+          "col": 1
+        },
+        "type": "piece",
+        "order": 17
+      },
+      {
+        "position": {
+          "row": -1,
+          "col": 1
+        },
+        "type": "final",
+        "order": 18
+      }
+    ]
+  }
+]
