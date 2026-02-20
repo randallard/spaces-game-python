@@ -188,3 +188,28 @@ Size 6 has 36 cells — biggest board yet. Expect slower phase progression and l
 All 7 phases cleared by ~1.5M steps — faster than expected for 36-cell boards. Win rate oscillated 55-80% at phase 6 with avg ~65%. EV bounced 0.14-0.50. Cut at 4.1M steps — WR was not trending upward over the last 2M steps, oscillating in the 60-70% band. Same plateau pattern as earlier sizes.
 
 Production models (beginner/intermediate/expert) deployed to `models/size6/stage4/`. Self-play training started from best pool model with `--resume`.
+
+### Size 6 Fog + Self-Play: Complete
+
+Resumed from best pool model with `--self-play`. Same rapid convergence as sizes 3 and 5:
+
+- Level 10 (pool_size cap) reached by 1.9M steps
+- 100% SP eval WR at 1.95M steps
+- Pool WR ~60% (expected — model optimized for self-play opponents)
+- EV ~0.29 at convergence
+- 21 level advancement snapshots saved automatically (levels 0-10, before/after each transition)
+
+All sizes now follow the same pattern: pool-only converges in 1-4M steps, self-play reaches level 10 with ~100% SP WR within another 2M steps. Fog-first (skipping Stage 3) confirmed viable for sizes 5 and 6 — no need for full-reveal pretraining.
+
+Training command:
+```bash
+python examples/train_simultaneous.py \
+    --size 6 --fog --self-play \
+    --timesteps 10000000 \
+    --learning-rate 1e-4 \
+    --ent-coef 0.1 \
+    --n-steps 4096 \
+    --resume models/size6/stage4/best/best_model.zip \
+    --discord-webhook "$DISCORD_WEBHOOK" \
+    --discord-check-in 30
+```

@@ -15,9 +15,9 @@ For Discord training notifications, see [DISCORD_SETUP.md](DISCORD_SETUP.md).
 |------|----------------------|---------------|-----------|------------|
 | 2 | Complete | Not started | Not needed | `models/size2/stage3/best/` |
 | 3 | Complete | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size3/stage4/best/` |
-| 4 | Complete (~78% WR) | Fog pool converged, SP ready | Complete (pool mixing) | `models/size4/stage3/best/`, `models/size4/stage4/` |
+| 4 | Complete (~78% WR) | Fog+SP complete (80% SP WR, level 10) | Complete | `models/size4/stage3/best/`, `models/size4/stage4/` |
 | 5 | Skipped (fog-first) | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size5/stage4/` |
-| 6 | Skipped (fog-first) | Fog pool converged, SP running | In progress | `models/size6/stage4/` |
+| 6 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size6/stage4/` |
 
 ---
 
@@ -399,7 +399,7 @@ spaces_game/simultaneous_play_env.py
 - Stage 3 + self-play: ~78% win rate at 2.05M steps with pool mixing
 - 5 difficulty tiers saved in `models/size4/stage3/difficulty/`
 - Stage 4 fog pool-only: Converged, all phases cleared. Models deployed to `models/size4/stage4/`
-- Stage 4 fog + self-play: Ready to run from converged fog model
+- Stage 4 fog + self-play: Level 10 by 1.8M steps, 80% SP WR at 5.25M steps. 20 level advancement snapshots saved.
 
 ### Size 5 (Feb 2026)
 - Stage 3 skipped — went fog-first to test whether Stage 3 pretraining is necessary
@@ -409,19 +409,18 @@ spaces_game/simultaneous_play_env.py
 ### Size 6 (Feb 2026)
 - Stage 3 skipped (fog-first confirmed unnecessary)
 - Stage 4 fog pool-only: All phases cleared by ~1.5M steps. WR oscillated 55-80% at phase 6, avg ~65%. Cut at 4.1M steps.
-- Stage 4 fog + self-play: Running from best pool model. Monitoring via Discord.
+- Stage 4 fog + self-play: Reached level 10 by 1.9M steps, 100% SP WR at 1.95M. 21 level advancement snapshots saved. Production models deployed.
 
 ### Next Steps
-- **Size 6 fog self-play**: Monitor convergence, deploy production models
-- **Size 4 fog self-play**: Resume from converged fog model with `--self-play`
 - **Pool size increase**: Consider `--pool-size 20` for future self-play runs to push past level 10 ceiling
-- **UI enhancements**: Focus on frontend improvements while training runs
+- **UI enhancements**: Focus on frontend improvements — all sizes 2-6 trained and deployed
+- **Size 7+**: Follow fog-first pipeline (skip Stage 3, train fog pool-only, then self-play)
 
 ### Deployment Plan
 - Size 3 fog model: `models/size3/stage4/best/best_model.zip` — level 10 self-play, ~90% SP WR
-- Size 4 fog model: `models/size4/stage4/beginner.zip`, `intermediate.zip`, `expert.zip`
+- Size 4 fog model: `models/size4/stage4/beginner.zip`, `intermediate.zip`, `expert.zip` — level 10 self-play, 80% SP WR
 - Size 5 fog model: `models/size5/stage4/beginner.zip`, `intermediate.zip`, `expert.zip`
-- Size 6 fog model: `models/size6/stage4/beginner.zip`, `intermediate.zip`, `expert.zip` (pool-only, self-play in progress)
+- Size 6 fog model: `models/size6/stage4/beginner.zip`, `intermediate.zip`, `expert.zip` — level 10 self-play, 100% SP WR
 - Level advancement models available via indexed selection (`GET /models`)
 
 ---
