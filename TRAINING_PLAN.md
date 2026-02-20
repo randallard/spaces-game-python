@@ -13,12 +13,12 @@ For Discord training notifications, see [DISCORD_SETUP.md](DISCORD_SETUP.md).
 
 | Size | Stage 3 (Full Reveal) | Stage 4 (Fog) | Self-Play | Model Path |
 |------|----------------------|---------------|-----------|------------|
-| 2 | Complete | Not started | Not needed | `models/size2/stage3/best/` |
+| 2 | Complete (retiring) | Fog pipeline running | In progress | `models/size2/stage3/best/` |
 | 3 | Complete | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size3/stage4/best/` |
 | 4 | Complete (~78% WR) | Fog+SP complete (80% SP WR, level 10) | Complete | `models/size4/stage3/best/`, `models/size4/stage4/` |
 | 5 | Skipped (fog-first) | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size5/stage4/` |
 | 6 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size6/stage4/` |
-| 7 | Skipped (fog-first) | Fog pool converged, SP running | In progress | `models/size7/stage4/` |
+| 7 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size7/stage4/` |
 
 ---
 
@@ -415,14 +415,14 @@ spaces_game/simultaneous_play_env.py
 ### Size 7 (Feb 2026)
 - Stage 3 skipped (fog-first pipeline)
 - Stage 4 fog pool-only: All phases cleared by 1.6M steps
-- Stage 4 fog + self-play: Running via automated pipeline
+- Stage 4 fog + self-play: Level 10 at 2.12M steps, 100% SP WR. Fully automated pipeline. Production models deployed.
 
 ### Next Steps
 
-**Fog-only deployment**: All production models should be fog-trained. Non-fog (Stage 3) models are being phased out. Current gap:
-- **Size 2**: Only size without fog models. Pool boards exist in `boards/size2/` (different naming: `simple.json`, `one_trap.json`, `super_move.json`, `super_move_counter.json`). Needs fog pool-only + self-play training, then Stage 3 models can be retired.
+**Fog-only deployment**: All production models should be fog-trained. Non-fog (Stage 3) models are being phased out.
+- **Size 2**: Pipeline running — pool boards exist in `boards/size2/` (legacy naming). Once complete, all sizes 2-7 will have fog models and Stage 3 models can be retired.
 - Sizes 3-4 have both Stage 3 and Stage 4 models; Stage 3 models can be retired once size 2 fog is done.
-- Sizes 5-7 are fog-only already (never had Stage 3 models).
+- Sizes 5-7 are fog-only (never had Stage 3 models).
 
 **Pipeline automation for sizes 8-10**: Productionize the training pipeline script so it can run unattended for new sizes. Requirements:
 - Single command: `python scripts/train_pipeline.py --size N --discord-webhook URL`
@@ -435,7 +435,6 @@ spaces_game/simultaneous_play_env.py
 - Stall detection with alerts if no progress for 30+ minutes
 
 **Other**:
-- **Size 7 self-play**: Monitor convergence (automated pipeline running)
 - **Pool size increase**: Consider `--pool-size 20` for future self-play runs to push past level 10 ceiling
 - **UI enhancements**: Focus on frontend improvements — all sizes 2-7 trained and deployed
 

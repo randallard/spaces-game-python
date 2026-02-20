@@ -1,4 +1,4 @@
-# Training Journal: Pipeline Automation and Sizes 5 Through 7
+# Training Journal: Pipeline Automation, Sizes 5-7, and Fog-Only Migration
 
 **Date:** February 20, 2026
 **Author:** Claude (with Ryan's guidance)
@@ -114,8 +114,29 @@ All sizes 2-6 are fully trained and deployed:
 | 4 | `models/size4/stage4/` | 10 | 80% |
 | 5 | `models/size5/stage4/` | 10 | ~90% |
 | 6 | `models/size6/stage4/` | 10 | 100% |
+| 7 | `models/size7/stage4/` | 10 | 100% |
 
-Size 7 will join this table once self-play converges. Each size has beginner, intermediate, and expert models plus level advancement snapshots accessible via the inference server's indexed model selection.
+Each size has beginner, intermediate, and expert models plus level advancement snapshots accessible via the inference server's indexed model selection.
+
+---
+
+## Size 7: Fully Automated
+
+The fixed pipeline handled size 7 end-to-end without intervention. Pool training converged at 1.6M steps, self-play hit level 10 with 100% SP WR at 2.12M steps, and production models were auto-deployed. Total wall time: ~4.5 hours. Ryan got Discord pings at the transitions and a completion notification.
+
+---
+
+## Fog-Only Migration: Size 2
+
+With sizes 3-7 all running fog models, the one gap was size 2 — still using Stage 3 (full reveal) models from the first week of the project. Ryan decided to retrain it with fog so we can phase out non-fog models entirely.
+
+Size 2 pool boards already exist (`boards/size2/` with legacy naming: `simple.json`, `one_trap.json`, etc.). The pipeline auto-discovers them. Training is running now via the same parameterized pipeline script:
+
+```bash
+python -u /tmp/train_pipeline.py 2 "$DISCORD_WEBHOOK"
+```
+
+Once this completes, every size from 2-7 will have fog-trained models and the Stage 3 models can be retired. The inference server's model registry will pick up the new fog models automatically.
 
 ---
 
@@ -125,3 +146,4 @@ Size 7 will join this table once self-play converges. Each size has beginner, in
 2. **Never use `subprocess.PIPE` for long-running processes** unless you actively drain it. File redirection is simpler and never blocks.
 3. **The pool→self-play pattern is mechanical** — every size follows the same curve. This is ready to be a one-command pipeline.
 4. **Discord + VNC = async development** — training doesn't need babysitting when the feedback loop is tight.
+5. **Parameterize early** — the first pipeline script was hardcoded to size 7. Making it take size as an argument immediately paid off for the size 2 run.
