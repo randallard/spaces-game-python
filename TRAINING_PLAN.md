@@ -428,11 +428,29 @@ spaces_game/simultaneous_play_env.py
 - Single command: `python scripts/train_pipeline.py --size N --discord-webhook URL`
 - Auto-discovers pool boards from `boards/sizeN/`
 - Runs fog pool-only until phase 6 converged, then auto-transitions to self-play
+- **Save pool-only best model** before starting self-play (`pool_best.zip`) — pool snapshots are overwritten by self-play and can't be recovered
 - Stops at level 10 + 100% SP WR (or 10M step cap)
 - Deploys production models (beginner/intermediate/expert) on completion
 - Hourly Discord updates with level, SP WR, EV, and milestone alerts
 - Subprocess stdout to file (not pipe) to avoid blocking
 - Stall detection with alerts if no progress for 30+ minutes
+
+**Difficulty tiers — lower half needs pool-only models**: Self-play snapshots (even level 0) are too strong for beginner/easy difficulty. The agent has already mastered the full pool curriculum before self-play starts. For truly easy opponents, we capture weak models mid-pool-training:
+
+Difficulty mapping:
+  - **Beginner**: Pool phase 1 (mixed_traps solo) at 65% WR — barely competent
+  - **Easy**: Pool phase 2 (simple+mixed combined) at 65% WR
+  - **Medium**: Entering pool phase 3 (super_move solo) — weakest at new challenge
+  - **Hard**: Self-play level 3-5 snapshots (from level_advancement/)
+  - **Expert**: Self-play level 8-10 / best model
+
+Scripts:
+  - `scripts/train_pipeline.py` — full pipeline (pool + self-play), saves all 5 tiers during training
+  - `scripts/train_pool_difficulty.py` — pool-only, captures beginner/easy/medium for existing sizes
+    - Usage: `python scripts/train_pool_difficulty.py 2-7 [WEBHOOK_URL]`
+    - Stops training as soon as all 3 snapshots are captured (no need to converge)
+    - Saves to `models/sizeN/stage4/difficulty/{beginner,easy,medium}.zip`
+    - Runs each size sequentially; skips sizes where all 3 already exist
 
 **Other**:
 - **Pool size increase**: Consider `--pool-size 20` for future self-play runs to push past level 10 ceiling
