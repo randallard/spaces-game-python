@@ -1,0 +1,119 @@
+[
+  {
+    "boardSize": 9,
+    "grid": [
+      ["empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "trap", "piece", "trap", "trap", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "piece", "empty", "empty", "empty", "empty", "empty", "empty"]
+    ],
+    "sequence": [
+      {"position": {"row": 8, "col": 2}, "type": "piece", "order": 1},
+      {"position": {"row": 7, "col": 2}, "type": "piece", "order": 2},
+      {"position": {"row": 6, "col": 2}, "type": "piece", "order": 3},
+      {"position": {"row": 5, "col": 2}, "type": "piece", "order": 4},
+      {"position": {"row": 5, "col": 1}, "type": "trap", "order": 5},
+      {"position": {"row": 5, "col": 3}, "type": "piece", "order": 6},
+      {"position": {"row": 5, "col": 4}, "type": "trap", "order": 7},
+      {"position": {"row": 5, "col": 3}, "type": "trap", "order": 8},
+      {"position": {"row": 4, "col": 3}, "type": "piece", "order": 9},
+      {"position": {"row": 3, "col": 3}, "type": "piece", "order": 10},
+      {"position": {"row": 2, "col": 3}, "type": "piece", "order": 11},
+      {"position": {"row": 1, "col": 3}, "type": "piece", "order": 12},
+      {"position": {"row": 0, "col": 3}, "type": "piece", "order": 13},
+      {"position": {"row": -1, "col": 3}, "type": "final", "order": 14}
+    ]
+  },
+  {
+    "boardSize": 9,
+    "grid": [
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "trap", "trap", "piece", "trap", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty"]
+    ],
+    "sequence": [
+      {"position": {"row": 8, "col": 5}, "type": "piece", "order": 1},
+      {"position": {"row": 7, "col": 5}, "type": "piece", "order": 2},
+      {"position": {"row": 6, "col": 5}, "type": "piece", "order": 3},
+      {"position": {"row": 5, "col": 5}, "type": "piece", "order": 4},
+      {"position": {"row": 5, "col": 6}, "type": "trap", "order": 5},
+      {"position": {"row": 5, "col": 4}, "type": "piece", "order": 6},
+      {"position": {"row": 5, "col": 3}, "type": "trap", "order": 7},
+      {"position": {"row": 5, "col": 4}, "type": "trap", "order": 8},
+      {"position": {"row": 4, "col": 4}, "type": "piece", "order": 9},
+      {"position": {"row": 3, "col": 4}, "type": "piece", "order": 10},
+      {"position": {"row": 2, "col": 4}, "type": "piece", "order": 11},
+      {"position": {"row": 1, "col": 4}, "type": "piece", "order": 12},
+      {"position": {"row": 0, "col": 4}, "type": "piece", "order": 13},
+      {"position": {"row": -1, "col": 4}, "type": "final", "order": 14}
+    ]
+  },
+  {
+    "boardSize": 9,
+    "grid": [
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "trap", "trap", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty"]
+    ],
+    "sequence": [
+      {"position": {"row": 8, "col": 5}, "type": "piece", "order": 1},
+      {"position": {"row": 7, "col": 5}, "type": "piece", "order": 2},
+      {"position": {"row": 6, "col": 5}, "type": "piece", "order": 3},
+      {"position": {"row": 6, "col": 5}, "type": "trap", "order": 4},
+      {"position": {"row": 6, "col": 4}, "type": "piece", "order": 5},
+      {"position": {"row": 6, "col": 4}, "type": "trap", "order": 6},
+      {"position": {"row": 5, "col": 4}, "type": "piece", "order": 7},
+      {"position": {"row": 4, "col": 4}, "type": "piece", "order": 8},
+      {"position": {"row": 3, "col": 4}, "type": "piece", "order": 9},
+      {"position": {"row": 2, "col": 4}, "type": "piece", "order": 10},
+      {"position": {"row": 1, "col": 4}, "type": "piece", "order": 11},
+      {"position": {"row": 0, "col": 4}, "type": "piece", "order": 12},
+      {"position": {"row": -1, "col": 4}, "type": "final", "order": 13}
+    ]
+  },
+  {
+    "boardSize": 9,
+    "grid": [
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "trap", "trap", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"],
+      ["empty", "empty", "empty", "empty", "piece", "empty", "empty", "empty", "empty"]
+    ],
+    "sequence": [
+      {"position": {"row": 8, "col": 4}, "type": "piece", "order": 1},
+      {"position": {"row": 7, "col": 4}, "type": "piece", "order": 2},
+      {"position": {"row": 6, "col": 4}, "type": "piece", "order": 3},
+      {"position": {"row": 6, "col": 3}, "type": "trap", "order": 4},
+      {"position": {"row": 6, "col": 4}, "type": "trap", "order": 5},
+      {"position": {"row": 5, "col": 4}, "type": "piece", "order": 6},
+      {"position": {"row": 4, "col": 4}, "type": "piece", "order": 7},
+      {"position": {"row": 3, "col": 4}, "type": "piece", "order": 8},
+      {"position": {"row": 2, "col": 4}, "type": "piece", "order": 9},
+      {"position": {"row": 1, "col": 4}, "type": "piece", "order": 10},
+      {"position": {"row": 0, "col": 4}, "type": "piece", "order": 11},
+      {"position": {"row": -1, "col": 4}, "type": "final", "order": 12}
+    ]
+  }
+]

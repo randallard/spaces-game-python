@@ -13,12 +13,14 @@ For Discord training notifications, see [DISCORD_SETUP.md](DISCORD_SETUP.md).
 
 | Size | Stage 3 (Full Reveal) | Stage 4 (Fog) | Self-Play | Model Path |
 |------|----------------------|---------------|-----------|------------|
-| 2 | Complete (retiring) | Fog pipeline running | In progress | `models/size2/stage3/best/` |
+| 2 | Complete (retiring) | Fog+SP complete | Complete | `models/size2/stage4/` |
 | 3 | Complete | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size3/stage4/best/` |
 | 4 | Complete (~78% WR) | Fog+SP complete (80% SP WR, level 10) | Complete | `models/size4/stage3/best/`, `models/size4/stage4/` |
 | 5 | Skipped (fog-first) | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size5/stage4/` |
 | 6 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size6/stage4/` |
 | 7 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size7/stage4/` |
+| 8 | Skipped (fog-first) | Pool training in progress (2M steps, phase 2) | Pending | `models/size8/stage4/` |
+| 9 | Skipped (fog-first) | Board pools ready, training not started | Pending | `boards/size9/` |
 
 ---
 
@@ -419,10 +421,18 @@ spaces_game/simultaneous_play_env.py
 
 ### Next Steps
 
-**Fog-only deployment**: All production models should be fog-trained. Non-fog (Stage 3) models are being phased out.
-- **Size 2**: Pipeline running — pool boards exist in `boards/size2/` (legacy naming). Once complete, all sizes 2-7 will have fog models and Stage 3 models can be retired.
-- Sizes 3-4 have both Stage 3 and Stage 4 models; Stage 3 models can be retired once size 2 fog is done.
-- Sizes 5-7 are fog-only (never had Stage 3 models).
+**Fog-only deployment**: All production models are fog-trained. Sizes 2-7 complete. Stage 3 models for sizes 2-4 can be retired.
+
+**Verify difficulty snapshots for sizes 2-7**: The beginner/easy/medium snapshots were captured from pool-only training checkpoints. They need gameplay verification to confirm appropriate challenge levels:
+- Play 5-10 games against each difficulty tier per size
+- Beginner should lose most games but still make legal moves
+- Easy should be competitive but beatable by a casual player
+- Medium should require some strategy to beat
+- If any tier is too strong or too weak, re-capture from a different phase checkpoint
+
+**Size 8**: Pipeline running (pool phase 2 at 2M steps). Beginner snapshot captured. Board pools validated.
+
+**Size 9**: Board pools created and validated (16 boards across 4 categories). Ready to start training pipeline.
 
 **Pipeline automation for sizes 8-10**: Productionize the training pipeline script so it can run unattended for new sizes. Requirements:
 - Single command: `python scripts/train_pipeline.py --size N --discord-webhook URL`
