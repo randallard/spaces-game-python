@@ -19,8 +19,9 @@ For Discord training notifications, see [DISCORD_SETUP.md](DISCORD_SETUP.md).
 | 5 | Skipped (fog-first) | Fog+SP complete (~90% SP WR, level 10) | Complete | `models/size5/stage4/` |
 | 6 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size6/stage4/` |
 | 7 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size7/stage4/` |
-| 8 | Skipped (fog-first) | Pool training in progress (2M steps, phase 2) | Pending | `models/size8/stage4/` |
-| 9 | Skipped (fog-first) | Board pools ready, training not started | Pending | `boards/size9/` |
+| 8 | Skipped (fog-first) | Fog+SP complete (100% SP WR, level 10) | Complete | `models/size8/stage4/` |
+| 9 | Skipped (fog-first) | Pipeline running | In progress | `models/size9/stage4/` |
+| 10 | Skipped (fog-first) | Board pools ready, training not started | Pending | `boards/size10/` |
 
 ---
 
@@ -419,6 +420,11 @@ spaces_game/simultaneous_play_env.py
 - Stage 4 fog pool-only: All phases cleared by 1.6M steps
 - Stage 4 fog + self-play: Level 10 at 2.12M steps, 100% SP WR. Fully automated pipeline. Production models deployed.
 
+### Size 8 (Feb 2026)
+- Stage 3 skipped (fog-first pipeline)
+- Stage 4 fog pool-only: All phases cleared by 3.01M steps. Beginner/easy/medium captured during pool training.
+- Stage 4 fog + self-play: Level 10 at 2.73M steps, 100% SP WR. 22 level advancement snapshots saved. Production models deployed.
+
 ### Next Steps
 
 **Fog-only deployment**: All production models are fog-trained. Sizes 2-7 complete. Stage 3 models for sizes 2-4 can be retired.
@@ -430,9 +436,11 @@ spaces_game/simultaneous_play_env.py
 - Medium should require some strategy to beat
 - If any tier is too strong or too weak, re-capture from a different phase checkpoint
 
-**Size 8**: Pipeline running (pool phase 2 at 2M steps). Beginner snapshot captured. Board pools validated.
+**Size 8**: Complete. Pool converged at 3.01M steps, self-play at 2.73M steps (level 10, 100% SP WR). All difficulty tiers deployed.
 
-**Size 9**: Board pools created and validated (16 boards across 4 categories). Ready to start training pipeline.
+**Size 9**: Pipeline running. Board pools validated (16 boards across 4 categories).
+
+**Size 10**: Board pools created and validated (16 boards across 4 categories). Ready to start training pipeline.
 
 **Pipeline automation for sizes 8-10**: Productionize the training pipeline script so it can run unattended for new sizes. Requirements:
 - Single command: `python scripts/train_pipeline.py --size N --discord-webhook URL`
