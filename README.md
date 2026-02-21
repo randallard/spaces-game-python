@@ -105,6 +105,10 @@ spaces-game-python/
 │   ├── types.py          # Data structures (frozen dataclasses)
 │   ├── board_loader.py   # Load pre-generated boards
 │   └── gym_env.py        # Gymnasium environment
+├── mcp_server/           # MCP server for Claude Desktop
+│   ├── main.py           # FastMCP server (resource + tools)
+│   ├── config.py         # Knowledge base path config
+│   └── board_helpers.py  # JSON ↔ dataclass conversion
 ├── data/                 # Pre-generated board pools
 │   ├── boards_size_2.json
 │   ├── boards_size_3.json
@@ -166,6 +170,10 @@ mypy spaces_game --strict
 cd ../spaces-game-engine
 npm run cli -- generate-boards --size 3 --limit 500 --output ../spaces-game-python/data/boards_size_3.json
 ```
+
+## MCP Server
+
+An MCP server exposes game knowledge, board validation, and round simulation as tools for Claude Desktop. See [MCP_SERVER.md](../MCP_SERVER.md) for setup and usage.
 
 ## Training Progress
 
