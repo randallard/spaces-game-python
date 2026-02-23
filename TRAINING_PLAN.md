@@ -425,6 +425,11 @@ spaces_game/simultaneous_play_env.py
 - Stage 4 fog pool-only: All phases cleared by 3.01M steps. Beginner/easy/medium captured during pool training.
 - Stage 4 fog + self-play: Level 10 at 2.73M steps, 100% SP WR. 22 level advancement snapshots saved. Production models deployed.
 
+### Size 9 (Feb 2026, in progress)
+- Stage 3 skipped (fog-first pipeline)
+- Stage 4 fog pool-only: Phase 0 took 0.70M steps (3.5x slower than size 8). Phase 1 took 1.88M steps. Phase 2 entered at 1.88M steps — still training at 21.7M steps. Mean reward improved from -110 to ~0. EV 0.786. Beginner/intermediate snapshots saved. Pool convergence (phase 6) unlikely within 30M step budget.
+- Stage 4 fog + self-play: Not yet started — waiting for pool training to complete or exhaust budget.
+
 ### Next Steps
 
 **Fog-only deployment**: All production models are fog-trained. Sizes 2-7 complete. Stage 3 models for sizes 2-4 can be retired.
@@ -438,7 +443,7 @@ spaces_game/simultaneous_play_env.py
 
 **Size 8**: Complete. Pool converged at 3.01M steps, self-play at 2.73M steps (level 10, 100% SP WR). All difficulty tiers deployed.
 
-**Size 9**: Pipeline running. Board pools validated (16 boards across 4 categories).
+**Size 9**: Pipeline running. Pool training at ~21.7M/30M steps, still on phase 2. Beginner and intermediate snapshots saved. Phase 2 at 21.7M steps suggests pool convergence (phase 6) unlikely within 30M budget — may need manual self-play launch from best pool model. The 81-cell board (163 actions/step) is a significant scaling wall vs size 8 (3M steps to converge).
 
 **Size 10**: Board pools created and validated (16 boards across 4 categories). Ready to start training pipeline.
 

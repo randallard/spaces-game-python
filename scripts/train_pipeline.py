@@ -7,7 +7,7 @@ Saves difficulty-tier snapshots throughout:
   - Hard:      self-play level 3-5 snapshots (from level_advancement/)
   - Expert:    self-play best model (level 10 / final)
 
-Usage: python scripts/train_pipeline.py SIZE WEBHOOK_URL
+Usage: python scripts/train_pipeline.py --size N [--webhook URL]
 """
 import sys
 import os
@@ -17,15 +17,23 @@ import subprocess
 import glob
 import urllib.request
 import shutil
+import argparse
 
 sys.stdout.reconfigure(line_buffering=True)
 
-if len(sys.argv) < 3:
-    print("Usage: python scripts/train_pipeline.py SIZE WEBHOOK_URL")
-    sys.exit(1)
+parser = argparse.ArgumentParser(description="Fog training pipeline")
+parser.add_argument("--size", required=True, help="Board size (e.g., 9)")
+parser.add_argument("--webhook", default=None, help="Discord webhook URL")
+# Keep positional args for backwards compat
+parser.add_argument("pos_size", nargs="?", help=argparse.SUPPRESS)
+parser.add_argument("pos_webhook", nargs="?", help=argparse.SUPPRESS)
+args = parser.parse_args()
 
-SIZE = sys.argv[1]
-WEBHOOK = sys.argv[2]
+SIZE = args.size or args.pos_size
+WEBHOOK = args.webhook or args.pos_webhook
+if not SIZE:
+    parser.error("--size is required")
+
 
 # Find venv python
 VENV_PYTHON = os.path.join(os.getcwd(), "venv", "bin", "python")
@@ -42,9 +50,9 @@ BASE_ARGS = [
     "--learning-rate", "1e-4",
     "--ent-coef", "0.1",
     "--n-steps", "4096",
-    "--discord-webhook", WEBHOOK,
-    "--discord-check-in", "60",
 ]
+if WEBHOOK:
+    BASE_ARGS += ["--discord-webhook", WEBHOOK, "--discord-check-in", "60"]
 LOGDIR = f"logs/size{SIZE}_stage4/"
 STAGE_DIR = f"models/size{SIZE}/stage4"
 DIFF_DIR = os.path.join(STAGE_DIR, "difficulty")
@@ -53,6 +61,8 @@ LABEL = f"Size {SIZE} Fog"
 # ============ Helpers ============
 
 def send_discord(msg, color=0x3498DB):
+    if not WEBHOOK:
+        return
     embed = {"title": f"{LABEL} Pipeline", "description": msg, "color": color}
     payload = json.dumps({"embeds": [embed]}).encode("utf-8")
     req = urllib.request.Request(
@@ -221,6 +231,12 @@ pool_ok = run_training(
     check_pool,
     f"/tmp/size{SIZE}_pool_training.log",
 )
+
+if not pool_ok:
+    send_discord("Pool training failed or was interrupted — not starting self-play.", color=0xE74C3C)
+    print(f"[{time.strftime('%H:%M:%S')}] Pool training did not converge. Exiting.")
+    sys.exit(1)
+
 time.sleep(5)
 
 # ============ Phase 2: Self-play training ============
