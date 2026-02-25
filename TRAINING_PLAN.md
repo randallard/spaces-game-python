@@ -157,11 +157,33 @@ models/size5/stage3/difficulty/expert.zip         # Training end
 models/size5/stage3/phase_history.json            # Full progression log
 ```
 
-### Step 3: Add Self-Play (Optional but Recommended for Size 4+)
+### Step 3: Add Self-Play
 
 Pool opponents are static — the agent eventually memorizes counter-strategies. Self-play adds adaptive opponents that force the agent to generalize.
 
-**Important**: Train pool-only first until converged, then resume with self-play. Starting self-play from scratch leads to policy collapse (weak snapshots create a death spiral).
+There are two approaches:
+
+#### Option A: Self-play from scratch (Recommended for history-aware agents)
+
+Use `train_self_play.py` to start self-play from step 0 with no pool pre-training. This forces the model to learn history-dependent play from the beginning — both the agent and its self-play opponents see each other's boards and must adapt across rounds. Pool-first training teaches the model to ignore `opponent_history` (since random pool boards have no relationship to the agent's previous boards), and that habit persists even after adding self-play via `--resume`.
+
+```bash
+python examples/train_self_play.py \
+    --size 5 \
+    --timesteps 10000000 \
+    --pool-size 20
+```
+
+Key differences from the pool-first approach:
+- Uses only `00_simple.json` (or `simple.json`) as fallback — no opponent curriculum
+- Self-play from step 0, no warmup
+- Lower snapshot quality gate (0.30 default) — early models are weak but that's fine since both sides are equally weak
+- Fog enabled by default (use `--no-fog` to disable)
+- Cold start is safe: strict masking ensures valid boards, quality gate prevents garbage snapshots
+
+#### Option B: Pool-first then resume with self-play (Legacy approach)
+
+Train pool-only first until converged, then resume with self-play. This produces strong pool opponents but the model may not learn to adapt based on opponent history.
 
 ```bash
 # Resume from converged pool model with progressive window self-play
@@ -343,7 +365,8 @@ No notifications are sent if `--discord-webhook` is not provided.
 boards/sizeN/*.json          Pool files (opponent boards by difficulty)
         |
         v
-train_simultaneous.py        CLI entry point, env/model wiring
+train_simultaneous.py        Pool-first training, optional self-play via --resume
+train_self_play.py           Self-play from scratch (history-aware, fog default)
         |
         +-- spaces_game/callbacks/pool_utils.py
         |     discover_pools(), build_phase_map()
@@ -430,7 +453,19 @@ spaces_game/simultaneous_play_env.py
 - Stage 4 fog pool-only: Phase 0 took 0.70M steps (3.5x slower than size 8). Phase 1 took 1.88M steps. Phase 2 entered at 1.88M steps — still training at 21.7M steps. Mean reward improved from -110 to ~0. EV 0.786. Beginner/intermediate snapshots saved. Pool convergence (phase 6) unlikely within 30M step budget.
 - Stage 4 fog + self-play: Not yet started — waiting for pool training to complete or exhaust budget.
 
+### Size 3 Self-Play from Scratch (Feb 2026, complete)
+- Using `train_self_play.py` — new script for history-aware self-play training
+- Self-play from step 0, no pool pre-training, fog enabled, pool-size 20
+- **Complete**: Level 20 (pool-size cap) at 3.8M steps, 100% SP eval WR sustained from ~6M steps, 10M total steps, ~11.7 hours
+- Zero recovery events, two minor backtracks (level 4→3 at 680k, level 9→8 at 1.68M), both recovered within 100k steps
+- Pool WR declined to ~35% (expected — agent optimized for self-play, not static pool)
+- 83 level advancement snapshots, 6 difficulty tiers saved
+- Outperforms pool-first approach: higher level (20 vs 10), better SP WR (100% vs 90%), fewer total steps, no manual intervention
+- Next: verify history-dependent play by playing against the model
+
 ### Next Steps
+
+**History-aware self-play**: The `train_self_play.py` script is validated — size 3 completed at level 20 with 100% SP eval WR. Size 2 training in progress, sizes 4+ queued. Convenience script: `train --size N`. Still need to verify round-over-round adaptation by playing against the trained model. If confirmed, this replaces pool-first for all production AI opponents.
 
 **Fog-only deployment**: All production models are fog-trained. Sizes 2-7 complete. Stage 3 models for sizes 2-4 can be retired.
 
