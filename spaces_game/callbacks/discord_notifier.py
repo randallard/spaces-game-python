@@ -1,6 +1,7 @@
 """DiscordNotifierCallback — sends training milestones and check-ins to Discord."""
 
 import json
+import sys
 import time
 import urllib.request
 from typing import Optional, List, Dict, TYPE_CHECKING
@@ -100,11 +101,13 @@ class DiscordNotifierCallback(BaseCallback):
         if not self._send_webhook(embed):
             print("\n  DISCORD: Webhook test failed. Notifications will not work.")
             print("  DISCORD: Check your webhook URL — it may be expired or invalid.")
-            response = input("  Continue training without Discord notifications? [y/N] ").strip().lower()
-            if response not in ("y", "yes"):
-                print("  Aborting training.")
-                raise SystemExit(1)
-            print("  Continuing without Discord notifications.\n")
+            if sys.stdin.isatty():
+                response = input("  Continue training without Discord notifications? [y/N] ").strip().lower()
+                if response not in ("y", "yes"):
+                    print("  Aborting training.")
+                    raise SystemExit(1)
+            else:
+                print("  DISCORD: Non-interactive mode — continuing without notifications.")
             self._disabled = True
 
     def _on_step(self) -> bool:
