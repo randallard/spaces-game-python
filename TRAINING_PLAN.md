@@ -465,7 +465,7 @@ spaces_game/simultaneous_play_env.py
 
 ### Next Steps
 
-**History-aware self-play**: The `train_self_play.py` script is validated — size 3 completed at level 20 with 100% SP eval WR. Size 2 training in progress, sizes 4+ queued. Convenience script: `train --size N`. Still need to verify round-over-round adaptation by playing against the trained model. If confirmed, this replaces pool-first for all production AI opponents.
+**History-aware self-play**: The `train_self_play.py` script is validated — size 3 completed at level 20 with 100% SP eval WR. Size 2 abandoned (board too small for meaningful self-play — SP eval stuck at 50% coin flip). Size 4 training in progress (10M steps, pool-size 20). Convenience script: `train --size N`. Still need to verify round-over-round adaptation by playing against the trained model.
 
 **Fog-only deployment**: All production models are fog-trained. Sizes 2-7 complete. Stage 3 models for sizes 2-4 can be retired.
 

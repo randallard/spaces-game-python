@@ -93,3 +93,13 @@ The open question remains: does this agent actually adapt its boards across roun
 2. **Cold start was a non-issue for size 3.** Zero recovery events. Strict masking + quality gate handled the random-policy phase cleanly.
 3. **Pool win rate is not the metric.** For self-play-from-scratch, pool WR declines as the agent specializes. SP eval WR is the only metric that matters.
 4. **Convenience scripts compound.** Ryan's `train` wrapper saves maybe 30 seconds per invocation, but it removes the friction of looking up the command — which means training runs actually get started instead of deferred.
+
+---
+
+## Update: Size 2 Abandoned, Size 4 Started
+
+We tried size 2 self-play-from-scratch and it confirmed what Ryan suspected: the board is too small for self-play to produce meaningful signal. SP eval win rate sat at exactly 50% from 200k through 484k steps — a pure coin flip. On a 2x2 board there are only 4 cells, so the space of valid boards is tiny. Both sides end up playing essentially the same board every time. Pool WR was volatile (100% → 15% → 95%) — noise, not learning. It entered recovery once at 450k steps.
+
+The diagnosis is straightforward: size 2 doesn't have enough strategic depth for history-dependent adaptation to emerge. The existing pool-trained models are sufficient for that scale.
+
+Ryan killed the size 2 run and started size 4 instead (`train --size 4`). With 16 cells and up to 3 traps, there's real room for board variety and round-over-round adaptation. This is the true test of the self-play-from-scratch approach at a scale where it should matter.
