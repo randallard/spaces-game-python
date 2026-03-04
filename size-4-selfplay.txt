@@ -1,0 +1,643 @@
+======================================================================
+SELF-PLAY FROM SCRATCH — Size 4
+======================================================================
+Board size:        4x4
+Total timesteps:   10,000,000
+Parallel envs:     4
+Fog of war:        ENABLED
+Eval frequency:    2,000 steps
+Save frequency:    10,000 steps
+Max steps/round:   40
+Learning rate:     0.0003
+Entropy coeff:     0.05
+N steps (total):   2048 (512 per env)
+Batch size:        64
+Output directory:  models/size4/selfplay
+
+Fallback pool:     boards/size4/00_simple.json
+
+Self-play (from step 0):
+  Snapshot freq:   50,000 steps
+  Pool size:       20
+  Warmup steps:    0 (immediate self-play)
+  Advance thresh:  70%
+  Backtrack thresh:55%
+  Min steps/level: 50,000
+  Recovery WR:     70%
+  Snapshot WR:     30% (quality gate)
+======================================================================
+
+Creating training environments...
+Creating evaluation environment...
+
+Initializing MaskablePPO agent (fresh, no pre-training)...
+Using cpu device
+
+Starting self-play training from scratch...
+Monitor progress with: tensorboard --logdir logs/size4_selfplay/
+======================================================================
+Logging to logs/size4_selfplay/MaskablePPO_4
+/home/randallard/Development/spaces-game-python/venv/lib/python3.14/site-packages/stable_baselines3/common/callbacks.py:418: UserWarning: Training and eval env are not of the same type<stable_baselines3.common.vec_env.subproc_vec_env.SubprocVecEnv object at 0x7fe4fc1578c0> != <stable_baselines3.common.vec_env.dummy_vec_env.DummyVecEnv object at 0x7fe4fc07c590>
+  warnings.warn("Training and eval env are not of the same type" f"{self.training_env} != {self.eval_env}")
+
+  DISCORD: Notifications enabled (webhook: https://discord.com/api/webhooks/14734123804060591...)
+  DISCORD: Check-in interval: 30 minutes
+  DISCORD: Failed to send webhook: URL can't contain control characters. '/api/webhooks/1473412380406059130/-B-F3ePWk2KDmqP7CH-KzPR-Xs-2WZBhUTP7ARN49EoCNuipyi9Zbfb67XVOK\n   cvdJ7dP' (found at least '\n')
+
+  DISCORD: Webhook test failed. Notifications will not work.
+  DISCORD: Check your webhook URL — it may be expired or invalid.
+  DISCORD: Non-interactive mode — continuing without notifications.
+
+  SELF-PLAY: Warmup complete at 4 steps
+  SELF-PLAY: Starting at window level 0 (seed only)
+  SELF-PLAY [LEVEL 0]: Snapshot saved (1 in pool, pool WR 100.0%)
+Eval num_timesteps=2000, episode_reward=-86.08 +/- 29.80
+Episode length: 61.20 +/- 2.71
+---------------------------------
+| eval/              |          |
+|    mean_ep_length  | 61.2     |
+|    mean_reward     | -86.1    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 1        |
+|    window_level    | 0        |
+| time/              |          |
+|    total_timesteps | 2000     |
+---------------------------------
+New best mean reward!
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.1     |
+|    ep_rew_mean     | -79.8    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 1        |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 950      |
+|    iterations      | 1        |
+|    time_elapsed    | 2        |
+|    total_timesteps | 2048     |
+---------------------------------
+Eval num_timesteps=4000, episode_reward=-83.80 +/- 25.12
+Episode length: 55.00 +/- 2.00
+-----------------------------------------
+| eval/                   |             |
+|    mean_ep_length       | 55          |
+|    mean_reward          | -83.8       |
+| self_play/              |             |
+|    in_recovery          | 0           |
+|    max_level            | 0           |
+|    pool_snapshots       | 1           |
+|    pool_win_rate        | 1           |
+|    window_level         | 0           |
+| time/                   |             |
+|    total_timesteps      | 4000        |
+| train/                  |             |
+|    approx_kl            | 0.005452753 |
+|    clip_fraction        | 0.033       |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.02       |
+|    explained_variance   | 0.00303     |
+|    learning_rate        | 0.0003      |
+|    loss                 | 229         |
+|    n_updates            | 10          |
+|    policy_gradient_loss | -0.0196     |
+|    value_loss           | 641         |
+-----------------------------------------
+New best mean reward!
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.1     |
+|    ep_rew_mean     | -84.9    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 1        |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 684      |
+|    iterations      | 2        |
+|    time_elapsed    | 5        |
+|    total_timesteps | 4096     |
+---------------------------------
+Eval num_timesteps=6000, episode_reward=-26.32 +/- 55.90
+Episode length: 60.80 +/- 2.79
+------------------------------------------
+| eval/                   |              |
+|    mean_ep_length       | 60.8         |
+|    mean_reward          | -26.3        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 1            |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 6000         |
+| train/                  |              |
+|    approx_kl            | 0.0050591743 |
+|    clip_fraction        | 0.0242       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.02        |
+|    explained_variance   | 0.0599       |
+|    learning_rate        | 0.0003       |
+|    loss                 | 217          |
+|    n_updates            | 20           |
+|    policy_gradient_loss | -0.0164      |
+|    value_loss           | 562          |
+------------------------------------------
+New best mean reward!
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 55.8     |
+|    ep_rew_mean     | -82.7    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 1        |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 541      |
+|    iterations      | 3        |
+|    time_elapsed    | 11       |
+|    total_timesteps | 6144     |
+---------------------------------
+
+======================================================================
+OPPONENT PHASE 0 EVALUATION (20 games)
+======================================================================
+  Pool wins:  15.0% (3W/17L/0T)
+  Valid rate: 100.0% (100/100 rounds)
+  Avg reward: -67.15
+  Self-play:  level 0 (max reached: 0), 7,996 steps at current level
+  Snapshots:  1 in pool
+======================================================================
+
+Eval num_timesteps=8000, episode_reward=-70.12 +/- 21.81
+Episode length: 61.20 +/- 2.40
+------------------------------------------
+| curriculum/             |              |
+|    avg_reward           | -67.1        |
+|    game_win_rate        | 0.15         |
+|    opponent_phase       | 0            |
+|    valid_rate           | 1            |
+| eval/                   |              |
+|    mean_ep_length       | 61.2         |
+|    mean_reward          | -70.1        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 1            |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 8000         |
+| train/                  |              |
+|    approx_kl            | 0.0058454825 |
+|    clip_fraction        | 0.0342       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.999       |
+|    explained_variance   | 0.0665       |
+|    learning_rate        | 0.0003       |
+|    loss                 | 156          |
+|    n_updates            | 30           |
+|    policy_gradient_loss | -0.0199      |
+|    value_loss           | 492          |
+------------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.2     |
+|    ep_rew_mean     | -80.9    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.15     |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 496      |
+|    iterations      | 4        |
+|    time_elapsed    | 16       |
+|    total_timesteps | 8192     |
+---------------------------------
+Eval num_timesteps=10000, episode_reward=23.36 +/- 100.17
+Episode length: 54.60 +/- 3.61
+-----------------------------------------
+| eval/                   |             |
+|    mean_ep_length       | 54.6        |
+|    mean_reward          | 23.4        |
+| self_play/              |             |
+|    in_recovery          | 0           |
+|    max_level            | 0           |
+|    pool_snapshots       | 1           |
+|    pool_win_rate        | 0.15        |
+|    window_level         | 0           |
+| time/                   |             |
+|    total_timesteps      | 10000       |
+| train/                  |             |
+|    approx_kl            | 0.007059031 |
+|    clip_fraction        | 0.0417      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -0.976      |
+|    explained_variance   | 0.158       |
+|    learning_rate        | 0.0003      |
+|    loss                 | 160         |
+|    n_updates            | 40          |
+|    policy_gradient_loss | -0.0218     |
+|    value_loss           | 404         |
+-----------------------------------------
+New best mean reward!
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56       |
+|    ep_rew_mean     | -73.5    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.15     |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 503      |
+|    iterations      | 5        |
+|    time_elapsed    | 20       |
+|    total_timesteps | 10240    |
+---------------------------------
+Eval num_timesteps=12000, episode_reward=-68.66 +/- 30.17
+Episode length: 58.00 +/- 0.89
+-----------------------------------------
+| eval/                   |             |
+|    mean_ep_length       | 58          |
+|    mean_reward          | -68.7       |
+| self_play/              |             |
+|    in_recovery          | 0           |
+|    max_level            | 0           |
+|    pool_snapshots       | 1           |
+|    pool_win_rate        | 0.15        |
+|    window_level         | 0           |
+| time/                   |             |
+|    total_timesteps      | 12000       |
+| train/                  |             |
+|    approx_kl            | 0.005320493 |
+|    clip_fraction        | 0.0263      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -0.977      |
+|    explained_variance   | 0.233       |
+|    learning_rate        | 0.0003      |
+|    loss                 | 166         |
+|    n_updates            | 50          |
+|    policy_gradient_loss | -0.0174     |
+|    value_loss           | 508         |
+-----------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.7     |
+|    ep_rew_mean     | -62.9    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.15     |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 509      |
+|    iterations      | 6        |
+|    time_elapsed    | 24       |
+|    total_timesteps | 12288    |
+---------------------------------
+Eval num_timesteps=14000, episode_reward=-52.38 +/- 78.07
+Episode length: 57.60 +/- 3.38
+------------------------------------------
+| eval/                   |              |
+|    mean_ep_length       | 57.6         |
+|    mean_reward          | -52.4        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 0.15         |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 14000        |
+| train/                  |              |
+|    approx_kl            | 0.0059513017 |
+|    clip_fraction        | 0.0356       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.971       |
+|    explained_variance   | 0.149        |
+|    learning_rate        | 0.0003       |
+|    loss                 | 204          |
+|    n_updates            | 60           |
+|    policy_gradient_loss | -0.0208      |
+|    value_loss           | 543          |
+------------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 55.8     |
+|    ep_rew_mean     | -57.1    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.15     |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 513      |
+|    iterations      | 7        |
+|    time_elapsed    | 27       |
+|    total_timesteps | 14336    |
+---------------------------------
+
+======================================================================
+OPPONENT PHASE 0 EVALUATION (20 games)
+======================================================================
+  Pool wins:  30.0% (6W/14L/0T)
+  Valid rate: 100.0% (100/100 rounds)
+  Avg reward: -25.82
+  Self-play:  level 0 (max reached: 0), 15,996 steps at current level
+  Snapshots:  1 in pool
+======================================================================
+
+Eval num_timesteps=16000, episode_reward=-74.08 +/- 29.77
+Episode length: 56.80 +/- 1.17
+------------------------------------------
+| curriculum/             |              |
+|    avg_reward           | -25.8        |
+|    game_win_rate        | 0.3          |
+|    opponent_phase       | 0            |
+|    valid_rate           | 1            |
+| eval/                   |              |
+|    mean_ep_length       | 56.8         |
+|    mean_reward          | -74.1        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 0.15         |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 16000        |
+| train/                  |              |
+|    approx_kl            | 0.0053388793 |
+|    clip_fraction        | 0.0214       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.986       |
+|    explained_variance   | 0.193        |
+|    learning_rate        | 0.0003       |
+|    loss                 | 289          |
+|    n_updates            | 70           |
+|    policy_gradient_loss | -0.0166      |
+|    value_loss           | 523          |
+------------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 55.5     |
+|    ep_rew_mean     | -56.8    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.3      |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 482      |
+|    iterations      | 8        |
+|    time_elapsed    | 33       |
+|    total_timesteps | 16384    |
+---------------------------------
+Eval num_timesteps=18000, episode_reward=45.88 +/- 124.73
+Episode length: 59.80 +/- 2.71
+------------------------------------------
+| eval/                   |              |
+|    mean_ep_length       | 59.8         |
+|    mean_reward          | 45.9         |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 0.3          |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 18000        |
+| train/                  |              |
+|    approx_kl            | 0.0063261413 |
+|    clip_fraction        | 0.0363       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.961       |
+|    explained_variance   | 0.013        |
+|    learning_rate        | 0.0003       |
+|    loss                 | 153          |
+|    n_updates            | 80           |
+|    policy_gradient_loss | -0.0205      |
+|    value_loss           | 446          |
+------------------------------------------
+New best mean reward!
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 55.6     |
+|    ep_rew_mean     | -67.3    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.3      |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 484      |
+|    iterations      | 9        |
+|    time_elapsed    | 38       |
+|    total_timesteps | 18432    |
+---------------------------------
+Eval num_timesteps=20000, episode_reward=-51.52 +/- 82.91
+Episode length: 57.60 +/- 3.32
+------------------------------------------
+| eval/                   |              |
+|    mean_ep_length       | 57.6         |
+|    mean_reward          | -51.5        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 0.3          |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 20000        |
+| train/                  |              |
+|    approx_kl            | 0.0058523538 |
+|    clip_fraction        | 0.0351       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.961       |
+|    explained_variance   | 0.17         |
+|    learning_rate        | 0.0003       |
+|    loss                 | 198          |
+|    n_updates            | 90           |
+|    policy_gradient_loss | -0.019       |
+|    value_loss           | 517          |
+------------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56       |
+|    ep_rew_mean     | -62.2    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.3      |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 485      |
+|    iterations      | 10       |
+|    time_elapsed    | 42       |
+|    total_timesteps | 20480    |
+---------------------------------
+Eval num_timesteps=22000, episode_reward=-54.58 +/- 53.63
+Episode length: 61.20 +/- 2.79
+------------------------------------------
+| eval/                   |              |
+|    mean_ep_length       | 61.2         |
+|    mean_reward          | -54.6        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 0.3          |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 22000        |
+| train/                  |              |
+|    approx_kl            | 0.0060877437 |
+|    clip_fraction        | 0.0398       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.925       |
+|    explained_variance   | 0.305        |
+|    learning_rate        | 0.0003       |
+|    loss                 | 191          |
+|    n_updates            | 100          |
+|    policy_gradient_loss | -0.0193      |
+|    value_loss           | 367          |
+------------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.4     |
+|    ep_rew_mean     | -64.8    |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.3      |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 487      |
+|    iterations      | 11       |
+|    time_elapsed    | 46       |
+|    total_timesteps | 22528    |
+---------------------------------
+
+======================================================================
+OPPONENT PHASE 0 EVALUATION (20 games)
+======================================================================
+  Pool wins:  25.0% (5W/13L/2T)
+  Valid rate: 100.0% (100/100 rounds)
+  Avg reward: -21.39
+  Self-play:  level 0 (max reached: 0), 23,996 steps at current level
+  Snapshots:  1 in pool
+======================================================================
+
+Eval num_timesteps=24000, episode_reward=-27.96 +/- 80.27
+Episode length: 59.00 +/- 2.53
+-----------------------------------------
+| curriculum/             |             |
+|    avg_reward           | -21.4       |
+|    game_win_rate        | 0.25        |
+|    opponent_phase       | 0           |
+|    valid_rate           | 1           |
+| eval/                   |             |
+|    mean_ep_length       | 59          |
+|    mean_reward          | -28         |
+| self_play/              |             |
+|    in_recovery          | 0           |
+|    max_level            | 0           |
+|    pool_snapshots       | 1           |
+|    pool_win_rate        | 0.3         |
+|    window_level         | 0           |
+| time/                   |             |
+|    total_timesteps      | 24000       |
+| train/                  |             |
+|    approx_kl            | 0.006645445 |
+|    clip_fraction        | 0.043       |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -0.932      |
+|    explained_variance   | 0.0661      |
+|    learning_rate        | 0.0003      |
+|    loss                 | 175         |
+|    n_updates            | 110         |
+|    policy_gradient_loss | -0.0194     |
+|    value_loss           | 377         |
+-----------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.5     |
+|    ep_rew_mean     | -67      |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.25     |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 475      |
+|    iterations      | 12       |
+|    time_elapsed    | 51       |
+|    total_timesteps | 24576    |
+---------------------------------
+Eval num_timesteps=26000, episode_reward=-19.86 +/- 86.24
+Episode length: 59.00 +/- 3.03
+------------------------------------------
+| eval/                   |              |
+|    mean_ep_length       | 59           |
+|    mean_reward          | -19.9        |
+| self_play/              |              |
+|    in_recovery          | 0            |
+|    max_level            | 0            |
+|    pool_snapshots       | 1            |
+|    pool_win_rate        | 0.25         |
+|    window_level         | 0            |
+| time/                   |              |
+|    total_timesteps      | 26000        |
+| train/                  |              |
+|    approx_kl            | 0.0067798174 |
+|    clip_fraction        | 0.0431       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -0.937       |
+|    explained_variance   | 0.0342       |
+|    learning_rate        | 0.0003       |
+|    loss                 | 204          |
+|    n_updates            | 120          |
+|    policy_gradient_loss | -0.0218      |
+|    value_loss           | 444          |
+------------------------------------------
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 56.6     |
+|    ep_rew_mean     | -66      |
+| self_play/         |          |
+|    in_recovery     | 0        |
+|    max_level       | 0        |
+|    pool_snapshots  | 1        |
+|    pool_win_rate   | 0.25     |
+|    window_level    | 0        |
+| time/              |          |
+|    fps             | 466      |
+|    iterations      | 13       |
+|    time_elapsed    | 57       |
+|    total_timesteps | 26624    |
+---------------------------------
+/usr/lib/python3.14/multiprocessing/resource_tracker.py:396: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-8sr0i56v'}
+  warnings.warn(

@@ -1,0 +1,25 @@
+op - 18:17:13 up 6 days,  5:10,  2 users,  load average: 3.60, 3.58, 3.65
+Tasks: 239 total, 4 running, 231 sleep, 0 d-sleep, 0 stopped, 4 zombie
+%Cpu(s): 90.8 us,  2.0 sy,  0.0 ni,  3.5 id,  3.0 wa,  0.7 hi,  0.1 si,  0.0 st
+MiB Mem :   7920.1 total,   2872.7 free,   2070.3 used,   3310.5 buff/cache
+MiB Swap:   4096.0 total,   3783.2 free,    312.8 used.   5849.8 avail Mem
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+1673185 randall+  20   0 1500908 388472  72716 R 323.6   4.8     65,11 python
+   1228 randall+  20   0  833400  90592  80976 R  13.9   1.1 126:15.96 Hyprland
+1681630 randall+  20   0 1340708 180316 130804 S   8.6   2.2   0:01.85 ghostty
+1681595 randall+  20   0  686400  79716  49156 R   8.0   1.0   0:04.30 wayvnc
+1673216 randall+  20   0  882396 232756   8940 S   3.7   2.9  65:57.73 python
+1673218 randall+  20   0  882636 232968   8940 S   3.7   2.9  64:51.79 python
+1673219 randall+  20   0  882624 232996   8940 S   3.7   2.9  64:22.64 python
+1673217 randall+  20   0  882800 233132   8940 S   3.3   2.9  64:45.35 python
+    659 root      20   0 2071848  76840  12836 S   1.0   0.9  11:51.14 tailscaled
+
+
+
+tenx-rltec:~ ❯ free -h
+               total        used        free      shared  buff/cache   available
+Mem:           7.7Gi       2.1Gi       2.5Gi        38Mi       3.4Gi       5.6Gi
+Swap:          4.0Gi       311Mi       3.7Gi
+
+tenx-rltec:~ ❯
