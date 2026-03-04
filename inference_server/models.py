@@ -23,6 +23,10 @@ class SkillLevel(str, Enum):
     advanced = "advanced"
     advanced_plus = "advanced_plus"
     test_fail = "test_fail"
+    scripted_1 = "scripted_1"
+    scripted_2 = "scripted_2"
+    scripted_3 = "scripted_3"
+    scripted_4 = "scripted_4"
 
 
 class MoveDict(BaseModel):
@@ -51,6 +55,10 @@ class ConstructBoardRequest(BaseModel):
     skill_level: SkillLevel = Field(
         default=SkillLevel.intermediate,
         description="AI skill level",
+    )
+    round_scores: list[dict] = Field(
+        default_factory=list,
+        description="Per-round scores: [{agent: float, opponent: float}, ...]",
     )
     agent_type: AgentType = Field(
         default=AgentType.standard,

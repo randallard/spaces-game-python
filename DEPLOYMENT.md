@@ -36,13 +36,29 @@ The Python inference server runs as a single Railway web service. It serves trai
 
 ### Model Files in Git
 
-Only production models are committed. The `.gitignore` allowlists exactly three files per board size:
+Only production models are committed. The `.gitignore` allowlists:
 
+**Skill-level checkpoints** (3 per board size per stage — used by the difficulty picker):
 ```
-models/size*/stage3/beginner.zip
-models/size*/stage3/intermediate.zip
-models/size*/stage3/expert.zip
+models/size*/stage{3,4}/beginner.zip
+models/size*/stage{3,4}/intermediate.zip
+models/size*/stage{3,4}/expert.zip
 ```
+
+**Browse-menu models** (any `.zip` in these subdirectories — shown in "Browse all available models"):
+```
+models/size*/stage{3,4}/level_advancement/*.zip
+models/size*/stage{3,4}/more_available_models/*.zip
+```
+
+To add a model to the browse menu, copy it into the appropriate `more_available_models/` directory:
+```bash
+mkdir -p models/size3/stage4/more_available_models/
+cp my_checkpoint.zip models/size3/stage4/more_available_models/
+git add models/size3/stage4/more_available_models/my_checkpoint.zip
+```
+
+The model's filename (minus `.zip`) becomes its display label in the UI.
 
 All other training artifacts (logs, intermediate checkpoints, eval data) are gitignored.
 
@@ -65,6 +81,7 @@ For production, set `INFERENCE_CORS_ORIGINS` to the Node app's Railway URL.
 |---|---|---|
 | GET | `/health` | Health check (Railway uses this) |
 | GET | `/info` | Loaded models, supported board sizes |
+| GET | `/models` | All available models (powers "Browse all available models" UI) |
 | POST | `/construct-board` | Build a board using the AI agent |
 
 **`POST /construct-board` request:**
@@ -98,9 +115,29 @@ For production, set `INFERENCE_CORS_ORIGINS` to the Node app's Railway URL.
 }
 ```
 
-**Skill levels:** `beginner`, `beginner_plus`, `intermediate`, `intermediate_plus`, `advanced`, `advanced_plus`, `test_fail`
+**Skill levels:** `beginner`, `beginner_plus`, `intermediate`, `intermediate_plus`, `advanced`, `advanced_plus`, `test_fail`, `scripted_1`, `scripted_2`, `scripted_3`, `scripted_4`
 
-Each skill level maps to a checkpoint (early/mid/advanced) and a sampling mode (stochastic/deterministic). Lower skill = earlier checkpoint + stochastic sampling. Higher skill = best checkpoint + deterministic.
+Each RL skill level maps to a checkpoint (early/mid/advanced) and a sampling mode (stochastic/deterministic). Lower skill = earlier checkpoint + stochastic sampling. Higher skill = best checkpoint + deterministic.
+
+**Scripted agents** (`scripted_1` through `scripted_4`) bypass the RL model pipeline entirely. They use deterministic board-building strategies and require no model files or opponent pools. They accept an optional `round_scores` field in the request for reactive behavior.
+
+| Level | Name | Traps | Column Strategy | Reactive Behavior |
+|-------|------|-------|-----------------|-------------------|
+| `scripted_1` | Simple | None | One switch at a random round | None |
+| `scripted_2` | Reactive | None | Switch column if lost last round | Score-aware |
+| `scripted_3` | Trapper | Adjacent to start | Switch column if lost last round | Score-aware + traps |
+| `scripted_4` | Adaptive | Adjacent to start | Always switch columns between rounds | Drops trap after losing 2 in a row |
+
+**`round_scores` format** (optional, used by scripted agents):
+```json
+{
+    "round_scores": [
+        {"agent": 1.0, "opponent": 0.0},
+        {"agent": 0.0, "opponent": 2.0}
+    ]
+}
+```
+Scores are from the AI agent's perspective (agent = AI's points, opponent = player's points for that round).
 
 ### Deployment Workflow
 

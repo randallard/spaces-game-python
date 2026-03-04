@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from spaces_game.types import Board, BoardMove, Position
 
 from . import config
+from .scripted_agents import scripted_board
 from .inference import (
     build_board_for_round,
     encode_board_for_agent,
@@ -232,6 +233,36 @@ async def construct_board(request: ConstructBoardRequest):
             valid=False,
             attempts_used=3,
             model_info={"skill_level": "test_fail"},
+        )
+
+    # Scripted agents: no model needed, deterministic board construction
+    if skill_level.startswith("scripted_"):
+        level = int(skill_level.split("_")[1])
+        board_dict = scripted_board(level, board_size, request.round_num, request.round_scores)
+
+        # Validate using the game engine
+        from spaces_game.validation import is_board_playable
+
+        seq = []
+        for m in board_dict["sequence"]:
+            seq.append(BoardMove(
+                position=Position(row=m["position"]["row"], col=m["position"]["col"]),
+                type=m["type"],
+                order=m["order"],
+            ))
+        grid_tuples = tuple(tuple(r) for r in board_dict["grid"])
+        board_obj = Board(
+            boardSize=board_size,
+            grid=grid_tuples,
+            sequence=tuple(seq),
+        )
+        valid = is_board_playable(board_obj)
+
+        return ConstructBoardResponse(
+            board=board_dict,
+            valid=valid,
+            attempts_used=1,
+            model_info={"skill_level": skill_level, "scripted": True},
         )
 
     # Route: model_id > model_index > skill_level
