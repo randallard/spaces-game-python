@@ -238,7 +238,10 @@ async def construct_board(request: ConstructBoardRequest):
     # Scripted agents: no model needed, deterministic board construction
     if skill_level.startswith("scripted_"):
         level = int(skill_level.split("_")[1])
-        board_dict = scripted_board(level, board_size, request.round_num, request.round_scores)
+        board_dict = scripted_board(
+            level, board_size, request.round_num, request.round_scores,
+            round_history=request.round_history,
+        )
 
         # Validate using the game engine
         from spaces_game.validation import is_board_playable

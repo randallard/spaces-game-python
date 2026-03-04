@@ -27,6 +27,20 @@ class SkillLevel(str, Enum):
     scripted_2 = "scripted_2"
     scripted_3 = "scripted_3"
     scripted_4 = "scripted_4"
+    scripted_5 = "scripted_5"
+
+
+class RoundHistoryEntry(BaseModel):
+    """A single completed round from the AI agent's perspective."""
+    agent_score: float = 0.0
+    opponent_score: float = 0.0
+    agent_board: str = ""
+    opponent_board_fog: str = ""
+    agent_last_step: int = -1
+    opponent_last_step: int = -1
+    agent_hit_trap: bool = False
+    opponent_hit_trap: bool = False
+    collision: bool = False
 
 
 class MoveDict(BaseModel):
@@ -59,6 +73,10 @@ class ConstructBoardRequest(BaseModel):
     round_scores: list[dict] = Field(
         default_factory=list,
         description="Per-round scores: [{agent: float, opponent: float}, ...]",
+    )
+    round_history: list[RoundHistoryEntry] = Field(
+        default_factory=list,
+        description="Rich per-round history from the AI agent's perspective",
     )
     agent_type: AgentType = Field(
         default=AgentType.standard,
