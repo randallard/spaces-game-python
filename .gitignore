@@ -78,6 +78,10 @@ models/size*/stage4/*
 !models/size*/stage4/expert.zip
 !models/size*/stage4/level_advancement/
 !models/size*/stage4/level_advancement/*.zip
+!models/size*/stage3/more_available_models/
+!models/size*/stage3/more_available_models/*.zip
+!models/size*/stage4/more_available_models/
+!models/size*/stage4/more_available_models/*.zip
 
 # Evaluation data
 eval/

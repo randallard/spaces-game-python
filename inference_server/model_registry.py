@@ -299,7 +299,8 @@ class ModelRegistry:
         """Build a flat indexed list of all discovered models.
 
         Includes skill-level checkpoints (early/mid/advanced) and
-        level_advancement models from each stage directory.
+        models from level_advancement/ and more_available_models/
+        subdirectories under each stage directory.
         Each entry gets a stable `model_id` (8-char hex hash).
         """
         self._indexed_models = []
@@ -340,17 +341,18 @@ class ModelRegistry:
             board_size = int(match.group(1))
 
             for stage in ["stage3", "stage4"]:
-                la_dir = size_dir / stage / "level_advancement"
-                if not la_dir.is_dir():
-                    continue
-
-                for zip_file in sorted(la_dir.glob("*.zip")):
-                    path_str = str(zip_file)
-                    if path_str in seen_paths:
+                for subdir_name in ["level_advancement", "more_available_models"]:
+                    subdir = size_dir / stage / subdir_name
+                    if not subdir.is_dir():
                         continue
-                    seen_paths.add(path_str)
-                    use_fog = stage == "stage4"
-                    _add_model(board_size, stage, zip_file.stem, path_str, use_fog)
+
+                    for zip_file in sorted(subdir.glob("*.zip")):
+                        path_str = str(zip_file)
+                        if path_str in seen_paths:
+                            continue
+                        seen_paths.add(path_str)
+                        use_fog = stage == "stage4"
+                        _add_model(board_size, stage, zip_file.stem, path_str, use_fog)
 
         logger.info("Indexed %d total models", len(self._indexed_models))
 
