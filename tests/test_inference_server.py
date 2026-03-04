@@ -839,3 +839,72 @@ class TestTemperature:
             })
 
         assert response.status_code == 422
+
+
+class TestScriptedModelIdOverride:
+    """Test that scripted agent IDs passed via model_id work correctly.
+
+    This covers the case where an opponent (e.g. Pip/beginner) has a scripted
+    agent assigned via modelAssignments, which sends model_id='scripted_1'
+    with a non-scripted skill_level like 'beginner'.
+    """
+
+    def test_scripted_model_id_with_non_scripted_skill_level(self, mock_registry):
+        """model_id='scripted_1' should route to scripted handler even when skill_level='beginner'."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "skill_level": "beginner",
+                "model_id": "scripted_1",
+            })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is True
+        assert data["model_info"]["scripted"] is True
+        assert data["model_info"]["skill_level"] == "scripted_1"
+
+    def test_scripted_model_id_all_levels(self, mock_registry):
+        """All scripted levels (1-5) work when passed as model_id."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            for level in range(1, 6):
+                response = client.post("/construct-board", json={
+                    "board_size": 2,
+                    "round_num": 0,
+                    "skill_level": "advanced",
+                    "model_id": f"scripted_{level}",
+                })
+                assert response.status_code == 200
+                data = response.json()
+                assert data["valid"] is True
+                assert data["model_info"]["scripted"] is True
+
+    def test_scripted_skill_level_still_works(self, mock_registry):
+        """When skill_level is already scripted, it should work without model_id."""
+        registry, _ = mock_registry
+
+        from inference_server.main import app
+        import inference_server.main as main_mod
+        with TestClient(app, raise_server_exceptions=False) as client:
+            main_mod.registry = registry
+            response = client.post("/construct-board", json={
+                "board_size": 2,
+                "round_num": 0,
+                "skill_level": "scripted_1",
+            })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is True
+        assert data["model_info"]["scripted"] is True

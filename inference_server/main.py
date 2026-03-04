@@ -235,9 +235,16 @@ async def construct_board(request: ConstructBoardRequest):
             model_info={"skill_level": "test_fail"},
         )
 
-    # Scripted agents: no model needed, deterministic board construction
+    # Resolve scripted agent ID from either skill_level or model_id override
+    scripted_id = None
     if skill_level.startswith("scripted_"):
-        level = int(skill_level.split("_")[1])
+        scripted_id = skill_level
+    elif request.model_id is not None and request.model_id.startswith("scripted_"):
+        scripted_id = request.model_id
+
+    # Scripted agents: no model needed, deterministic board construction
+    if scripted_id is not None:
+        level = int(scripted_id.split("_")[1])
         board_dict = scripted_board(
             level, board_size, request.round_num, request.round_scores,
             round_history=request.round_history,
@@ -265,10 +272,9 @@ async def construct_board(request: ConstructBoardRequest):
             board=board_dict,
             valid=valid,
             attempts_used=1,
-            model_info={"skill_level": skill_level, "scripted": True},
+            model_info={"skill_level": scripted_id, "scripted": True},
         )
 
-    # Route: model_id > model_index > skill_level
     if request.model_id is not None:
         try:
             model, uses_masks, use_fog = registry.get_model_by_id(request.model_id)
