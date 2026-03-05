@@ -1,5 +1,5 @@
 """
-Tests for scripted AI agents (size 2 difficulty levels 1-5).
+Tests for scripted AI agents (all board sizes, difficulty levels 1-5).
 """
 
 import pytest
@@ -115,6 +115,17 @@ class TestPickColumnLevel2:
         ]
         assert pick_column_level2(2, 2, scores) == 1
 
+    def test_size3_rotates_through_columns(self):
+        """On size 3, losing rotates to next column (0→1→2→0)."""
+        scores = [
+            {"agent": 0, "opponent": 1},  # lost → 0→1
+            {"agent": 0, "opponent": 1},  # lost → 1→2
+            {"agent": 0, "opponent": 1},  # lost → 2→0
+        ]
+        assert pick_column_level2(3, 1, scores[:1]) == 1
+        assert pick_column_level2(3, 2, scores[:2]) == 2
+        assert pick_column_level2(3, 3, scores[:3]) == 0
+
 
 # ---------------------------------------------------------------------------
 # Scripted board dispatcher
@@ -165,18 +176,28 @@ class TestScriptedBoard:
         trap_moves = [m for m in board["sequence"] if m["type"] == "trap"]
         assert len(trap_moves) == 1
 
-    def test_level4_always_switches_columns(self):
-        """Level 4 alternates columns every round."""
+    def test_level4_always_rotates_columns_size2(self):
+        """Level 4 alternates columns every round on size 2."""
         scores = [{"agent": 1, "opponent": 0}] * 4
         cols = []
         for round_num in range(5):
             board = scripted_board(4, 2, round_num, scores[:round_num])
-            # Get the piece column from first move
             first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
             cols.append(first_piece["position"]["col"])
         # Should alternate: 0, 1, 0, 1, 0
         for i in range(1, len(cols)):
             assert cols[i] != cols[i - 1], f"Round {i} should switch column"
+
+    def test_level4_rotates_columns_size3(self):
+        """Level 4 cycles through all 3 columns on size 3."""
+        scores = [{"agent": 1, "opponent": 0}] * 4
+        cols = []
+        for round_num in range(5):
+            board = scripted_board(4, 3, round_num, scores[:round_num])
+            first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
+            cols.append(first_piece["position"]["col"])
+        # Should cycle: 0, 1, 2, 0, 1
+        assert cols == [0, 1, 2, 0, 1]
 
     def test_invalid_level_raises(self):
         with pytest.raises(ValueError):
@@ -377,8 +398,8 @@ class TestLevel5:
         first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
         assert first_piece["position"]["col"] == 0  # same as starting column
 
-    def test_after_supermove_switches_to_opposite_trap(self):
-        """After playing supermove, next round should be trap from opposite column."""
+    def test_after_supermove_switches_to_next_column_trap(self):
+        """After playing supermove, next round should be trap from next column."""
         # Round 0-1: ties → round 2: supermove from col 0 → round 3: trap from col 1
         rh = [
             _make_round_history_entry(agent_score=1.0, opponent_score=1.0, agent_board="2|2p3t0pG0f"),
@@ -390,7 +411,7 @@ class TestLevel5:
         trap = next(m for m in board["sequence"] if m["type"] == "trap")
         # Should be trap board (not supermove) from column 1
         assert first_piece["position"] != trap["position"], "Should be trap board, not supermove"
-        assert first_piece["position"]["col"] == 1, "Should switch to opposite column"
+        assert first_piece["position"]["col"] == 1, "Should rotate to next column"
 
     def test_derives_column_from_round_history(self):
         """Level 5 derives its starting column from round_history[0].agent_board."""
@@ -410,3 +431,53 @@ class TestLevel5:
         ]
         board = scripted_board(5, 3, 2, [], round_history=rh)
         assert is_board_playable(_board_dict_to_board(board))
+
+    def test_size3_column_switch_on_zero_score(self):
+        """Size 3: supermove with 0 score rotates to next column."""
+        # Started col 0, two ties with 0 score → should rotate to col 1
+        rh = [
+            _make_round_history_entry(agent_score=0.0, opponent_score=0.0, agent_board="3|6p7t3p0pG0f"),
+            _make_round_history_entry(agent_score=0.0, opponent_score=0.0, agent_board="3|6p7t3p0pG0f"),
+        ]
+        board = scripted_board(5, 3, 2, [], round_history=rh)
+        first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
+        assert first_piece["position"]["col"] == 1
+
+    def test_size3_after_supermove_rotates(self):
+        """Size 3: after supermove from col 1, next round uses col 2."""
+        # Started col 1 (cell 7 on size-3 = row 2, col 1)
+        rh = [
+            _make_round_history_entry(agent_score=1.0, opponent_score=1.0, agent_board="3|7p8t4p1pG1f"),
+            _make_round_history_entry(agent_score=1.0, opponent_score=1.0, agent_board="3|7p8t4p1pG1f"),
+            _make_round_history_entry(agent_score=3.0, opponent_score=0.0, agent_board="3|7p7t4p1pG1f"),  # supermove col 1
+        ]
+        board = scripted_board(5, 3, 3, [], round_history=rh)
+        first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
+        assert first_piece["position"]["col"] == 2, "Should rotate from col 1 to col 2"
+
+
+# ---------------------------------------------------------------------------
+# Size 3+ full validity sweep
+# ---------------------------------------------------------------------------
+
+class TestSize3AllLevels:
+    @pytest.mark.parametrize("level", [1, 2, 3, 4])
+    def test_all_rounds_valid(self, level):
+        """All levels produce valid size-3 boards across 5 rounds."""
+        for round_num in range(5):
+            scores = [{"agent": 1, "opponent": 0}] * round_num
+            board = scripted_board(level, 3, round_num, scores)
+            assert is_board_playable(_board_dict_to_board(board)), \
+                f"Level {level}, round {round_num} produced invalid size-3 board"
+
+    def test_level5_all_rounds_valid(self):
+        """Level 5 produces valid size-3 boards across 5 rounds."""
+        rh = []
+        for r in range(5):
+            board = scripted_board(5, 3, r, [], round_history=rh)
+            assert is_board_playable(_board_dict_to_board(board)), \
+                f"Round {r} produced invalid size-3 board"
+            rh.append(_make_round_history_entry(
+                agent_score=3.0, opponent_score=0.0,
+                agent_board=encode_board_compact(board),
+            ))

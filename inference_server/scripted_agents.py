@@ -1,5 +1,5 @@
 """
-Scripted AI agents for size-2 boards.
+Scripted AI agents for any board size.
 
 Five difficulty levels with deterministic board-building strategies,
 bypassing the RL model pipeline entirely.
@@ -49,7 +49,7 @@ def build_trap_board(board_size: int, column: int) -> dict:
 
     Trap is placed in row (board_size-1) at the opposite column from the piece.
     """
-    trap_col = 1 - column if board_size == 2 else (column + 1) % board_size
+    trap_col = column + 1 if column + 1 < board_size else column - 1
 
     grid = [["empty"] * board_size for _ in range(board_size)]
     sequence = []
@@ -122,11 +122,11 @@ def pick_column_level1(board_size: int, round_num: int) -> int:
     Columns: 0, 0, 1, 1, 1 across 5 rounds.
     Simple and predictable — the easiest opponent.
     """
-    return 0 if round_num < 2 else 1
+    return 0 if round_num < 2 else min(1, board_size - 1)
 
 
 def pick_column_level2(board_size: int, round_num: int, round_scores: list[dict]) -> int:
-    """Level 2/3: Start column 0, switch if lost last round."""
+    """Level 2/3: Start column 0, rotate to next column if lost last round."""
     if round_num == 0:
         return 0
 
@@ -135,7 +135,7 @@ def pick_column_level2(board_size: int, round_num: int, round_scores: list[dict]
     for i in range(1, round_num + 1):
         scores_so_far = round_scores[:i]
         if _lost_last_round(scores_so_far):
-            col = 1 - col
+            col = (col + 1) % board_size
     return col
 
 
@@ -295,15 +295,15 @@ def scripted_board(
         return build_trap_board(board_size, col)
 
     elif level == 4:
-        # Always switch column from previous round
+        # Always rotate column from previous round
         if round_num == 0:
             col = 0
         else:
             # Replay column decisions to find previous column
             prev_col = 0
             for i in range(1, round_num):
-                prev_col = 1 - prev_col
-            col = 1 - prev_col
+                prev_col = (prev_col + 1) % board_size
+            col = (prev_col + 1) % board_size
 
         # Escape hatch: drop trap after losing 2 in a row → go simple
         if _lost_last_two_rounds(round_scores):
@@ -316,7 +316,7 @@ def scripted_board(
 
         if round_num == 0:
             # Round 0: pick random column, play trap board
-            col = random.randint(0, 1)
+            col = random.randint(0, board_size - 1)
             return build_trap_board(board_size, col)
 
         # Derive starting column from round 0's board
@@ -338,30 +338,30 @@ def scripted_board(
             past_rh = rh[:i]
 
             if last_was_supermove:
-                # After supermove: switch to trap from opposite column
-                current_col = 1 - current_col
+                # After supermove: rotate to next column
+                current_col = (current_col + 1) % board_size
                 last_was_supermove = False
             elif _two_consecutive_ties(past_rh):
                 # Trigger supermove
                 # Check score from two rounds ago
                 two_ago = past_rh[-2]
                 if two_ago.agent_score == 0:
-                    # Agent scored 0 → switch column, then supermove
-                    current_col = 1 - current_col
+                    # Agent scored 0 → rotate column, then supermove
+                    current_col = (current_col + 1) % board_size
                 # else: supermove from same column
                 last_was_supermove = True
             # else: keep playing trap from same column
 
         # Now decide for current round
         if last_was_supermove:
-            # After supermove: switch to trap from opposite column
-            current_col = 1 - current_col
+            # After supermove: rotate to next column
+            current_col = (current_col + 1) % board_size
             return build_trap_board(board_size, current_col)
         elif _two_consecutive_ties(rh[:round_num]):
             # Trigger supermove
             two_ago = rh[round_num - 2]
             if two_ago.agent_score == 0:
-                current_col = 1 - current_col
+                current_col = (current_col + 1) % board_size
             return build_supermove_board(board_size, current_col)
         else:
             return build_trap_board(board_size, current_col)
