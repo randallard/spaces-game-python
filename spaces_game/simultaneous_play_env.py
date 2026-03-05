@@ -103,6 +103,11 @@ class SimultaneousPlayEnv(gym.Env):
         self.use_self_play = False
         self.self_play_ratio = 0.5
 
+        # Scripted opponent support
+        self._scripted_opponent_level: Optional[int] = None
+        self._scripted_round_scores: List[Dict] = []
+        self._scripted_round_history: list = []
+
         # Action space: flat Discrete
         # [0..n_cells-1] = piece at cell i
         # [n_cells..2*n_cells-1] = trap at cell i
@@ -591,6 +596,10 @@ class SimultaneousPlayEnv(gym.Env):
         # Track agent's boards for opponent history in self-play
         self._agent_boards_this_game: List[Board] = []
 
+        # Reset scripted opponent state for new game
+        self._scripted_round_scores = []
+        self._scripted_round_history = []
+
         # Lock one pool for the entire 5-round game (consistent opponent style)
         active = self._get_active_pools()
         if not active:
@@ -701,17 +710,21 @@ class SimultaneousPlayEnv(gym.Env):
         if is_valid:
             self._agent_boards_this_game.append(agent_board)
 
-        # Select opponent's board (self-play or JSON pool)
+        # Select opponent's board (scripted agent, self-play model, or JSON pool)
         opponent_board = None
-        use_model = (
-            self.use_self_play
-            and self._opponent_model is not None
-            and np.random.random() < self.self_play_ratio
-        )
-        if use_model:
-            opponent_board = self._build_opponent_board_from_model()
-        if opponent_board is None:
-            opponent_board = self._select_opponent_board()
+        _scripted_board_dict = None
+        if self._scripted_opponent_level is not None:
+            opponent_board, _scripted_board_dict = self._get_scripted_opponent_board()
+        else:
+            use_model = (
+                self.use_self_play
+                and self._opponent_model is not None
+                and np.random.random() < self.self_play_ratio
+            )
+            if use_model:
+                opponent_board = self._build_opponent_board_from_model()
+            if opponent_board is None:
+                opponent_board = self._select_opponent_board()
 
         if not is_valid:
             # Invalid board fallback (shouldn't happen with strict masking)
@@ -774,6 +787,12 @@ class SimultaneousPlayEnv(gym.Env):
                 self._encode_opponent_board(opponent_board)
             )
 
+        # Update scripted agent state for next round
+        if self._scripted_opponent_level is not None and _scripted_board_dict is not None:
+            self._update_scripted_round_state(
+                agent_round_score, opponent_round_score, _scripted_board_dict,
+            )
+
         # Advance round
         self.current_round += 1
         terminated = self.current_round >= self.ROUNDS_PER_GAME
@@ -808,6 +827,89 @@ class SimultaneousPlayEnv(gym.Env):
             )
 
         return obs, reward, terminated, False, info
+
+    # --- Scripted opponent support ---
+
+    def set_scripted_opponent_level(self, level: int) -> None:
+        """Set scripted opponent level (1-5). Callable via SubprocVecEnv.env_method()."""
+        self._scripted_opponent_level = level
+
+    def clear_scripted_opponent(self) -> None:
+        """Clear scripted opponent, reverting to pool/self-play opponents."""
+        self._scripted_opponent_level = None
+        self._scripted_round_scores = []
+        self._scripted_round_history = []
+
+    def _get_scripted_opponent_board(self) -> Tuple[Board, dict]:
+        """Generate opponent board using the scripted agent."""
+        from inference_server.scripted_agents import scripted_board
+
+        rh = self._scripted_round_history if self._scripted_round_history else None
+        board_dict = scripted_board(
+            self._scripted_opponent_level,
+            self.board_size,
+            self.current_round,
+            self._scripted_round_scores,
+            round_history=rh,
+        )
+        board = self._board_dict_to_board_obj(board_dict)
+        return board, board_dict
+
+    def _update_scripted_round_state(
+        self,
+        agent_round_score: float,
+        opponent_round_score: float,
+        scripted_board_dict: dict,
+    ) -> None:
+        """Update scripted agent's round scores and history after simulation.
+
+        Perspective flip: the scripted agent is the 'opponent' in game terms,
+        but scripted_board() expects scores from its OWN perspective.
+        """
+        from inference_server.scripted_agents import encode_board_compact
+        from inference_server.models import RoundHistoryEntry
+
+        # From scripted agent's perspective: it scored opponent_round_score
+        self._scripted_round_scores.append({
+            "agent": opponent_round_score,
+            "opponent": agent_round_score,
+        })
+        entry = RoundHistoryEntry(
+            agent_score=opponent_round_score,
+            opponent_score=agent_round_score,
+            agent_board=encode_board_compact(scripted_board_dict),
+        )
+        self._scripted_round_history.append(entry)
+
+    @staticmethod
+    def _board_dict_to_board_obj(board_dict: dict) -> Board:
+        """Convert a scripted agent board dict to a Board object."""
+        sequence = []
+        for m in board_dict["sequence"]:
+            sequence.append(BoardMove(
+                position=Position(row=m["position"]["row"], col=m["position"]["col"]),
+                type=m["type"],
+                order=m["order"],
+            ))
+        str_grid = [
+            ["empty" for _ in range(board_dict["boardSize"])]
+            for _ in range(board_dict["boardSize"])
+        ]
+        for move in sequence:
+            if move.type == "final":
+                continue
+            r, c = move.position.row, move.position.col
+            if 0 <= r < board_dict["boardSize"] and 0 <= c < board_dict["boardSize"]:
+                if move.type == "piece":
+                    if str_grid[r][c] != "trap":
+                        str_grid[r][c] = "piece"
+                elif move.type == "trap":
+                    str_grid[r][c] = "trap"
+        return Board(
+            boardSize=board_dict["boardSize"],
+            grid=tuple(tuple(row) for row in str_grid),
+            sequence=tuple(sequence),
+        )
 
     # --- Phase control ---
 

@@ -139,6 +139,25 @@ def pick_column_level2(board_size: int, round_num: int, round_scores: list[dict]
     return col
 
 
+def encode_board_compact(board_dict: dict) -> str:
+    """Encode a board dict to compact format: '{size}|{moves}'.
+
+    Produces strings parseable by decode_starting_column().
+    """
+    size = board_dict["boardSize"]
+    moves = []
+    for m in board_dict["sequence"]:
+        pos = m["position"]
+        mtype = m["type"]
+        if pos["row"] == -1:  # Goal/final
+            moves.append(f"G{pos['col']}f")
+        else:
+            cell = pos["row"] * size + pos["col"]
+            type_char = "p" if mtype == "piece" else "t" if mtype == "trap" else "f"
+            moves.append(f"{cell}{type_char}")
+    return f"{size}|{''.join(moves)}"
+
+
 def decode_starting_column(encoded: str, board_size: int | None = None) -> int:
     """Extract the first piece's column from a compact-encoded board.
 

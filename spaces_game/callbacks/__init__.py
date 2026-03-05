@@ -8,6 +8,7 @@ from .pool_utils import (
 )
 from .opponent_progression import OpponentProgressionCallback
 from .self_play import SelfPlayCurriculumCallback
+from .scripted_curriculum import ScriptedCurriculumCallback
 from .discord_notifier import DiscordNotifierCallback
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "DIFFICULTY_CHECKPOINTS",
     "OpponentProgressionCallback",
     "SelfPlayCurriculumCallback",
+    "ScriptedCurriculumCallback",
     "DiscordNotifierCallback",
 ]

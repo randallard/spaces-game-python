@@ -10,6 +10,7 @@ from inference_server.scripted_agents import (
     build_supermove_board,
     build_trap_board,
     decode_starting_column,
+    encode_board_compact,
     pick_column_level1,
     pick_column_level2,
     scripted_board,
@@ -191,6 +192,35 @@ class TestScriptedBoard:
 # ---------------------------------------------------------------------------
 # Compact board decoder
 # ---------------------------------------------------------------------------
+
+class TestEncodeBoardCompact:
+    def test_roundtrip_trap_board_col0(self):
+        board = build_trap_board(2, 0)
+        encoded = encode_board_compact(board)
+        assert encoded.startswith("2|")
+        assert decode_starting_column(encoded) == 0
+
+    def test_roundtrip_trap_board_col1(self):
+        board = build_trap_board(2, 1)
+        encoded = encode_board_compact(board)
+        assert decode_starting_column(encoded) == 1
+
+    def test_roundtrip_supermove_board(self):
+        board = build_supermove_board(2, 0)
+        encoded = encode_board_compact(board)
+        assert decode_starting_column(encoded) == 0
+
+    def test_roundtrip_size3(self):
+        board = build_trap_board(3, 2)
+        encoded = encode_board_compact(board)
+        assert decode_starting_column(encoded) == 2
+
+    def test_simple_board_encoding(self):
+        board = build_simple_board(2, 0)
+        encoded = encode_board_compact(board)
+        # piece(1,0)=2p, piece(0,0)=0p, final(-1,0)=G0f
+        assert encoded == "2|2p0pG0f"
+
 
 class TestDecodeStartingColumn:
     def test_column0_size2(self):
