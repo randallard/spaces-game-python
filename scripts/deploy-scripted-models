@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deploy scripted training models to the inference server's stage4 directory.
+#
+# Copies level_advancement snapshots and the best model from
+# models/size{N}/scripted/ into models/size{N}/stage4/more_available_models/
+# so the model registry discovers them.
+
+usage() {
+    echo "Usage: deploy-scripted-models --size N [--project-dir DIR]"
+    echo ""
+    echo "Options:"
+    echo "  --size N          Board size (required)"
+    echo "  --project-dir DIR Project root (default: current directory)"
+    echo "  --dry-run         Show what would be copied without copying"
+    echo "  -h, --help        Show this help"
+    exit "${1:-0}"
+}
+
+SIZE=""
+PROJECT_DIR="."
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --size) SIZE="$2"; shift 2 ;;
+        --project-dir) PROJECT_DIR="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        -h|--help) usage 0 ;;
+        *) echo "Unknown option: $1"; usage 1 ;;
+    esac
+done
+
+if [[ -z "$SIZE" ]]; then
+    echo "ERROR: --size is required"
+    usage 1
+fi
+
+SCRIPTED_DIR="${PROJECT_DIR}/models/size${SIZE}/scripted"
+DEST_DIR="${PROJECT_DIR}/models/size${SIZE}/stage4/more_available_models"
+LEVEL_ADV="${SCRIPTED_DIR}/level_advancement"
+BEST_MODEL="${SCRIPTED_DIR}/best/best_model.zip"
+
+# Validate source exists
+if [[ ! -d "$SCRIPTED_DIR" ]]; then
+    echo "ERROR: Scripted training directory not found: ${SCRIPTED_DIR}"
+    exit 1
+fi
+
+echo "Deploying scripted models for size ${SIZE}"
+echo "  Source:      ${SCRIPTED_DIR}"
+echo "  Destination: ${DEST_DIR}"
+echo ""
+
+if $DRY_RUN; then
+    echo "[DRY RUN] Would create: ${DEST_DIR}"
+else
+    mkdir -p "$DEST_DIR"
+fi
+
+copied=0
+
+# Copy level_advancement snapshots
+if [[ -d "$LEVEL_ADV" ]]; then
+    count=$(find "$LEVEL_ADV" -name "*.zip" | wc -l)
+    echo "Level advancement snapshots: ${count} files"
+    if $DRY_RUN; then
+        find "$LEVEL_ADV" -name "*.zip" -exec basename {} \; | sort
+    else
+        cp "$LEVEL_ADV"/*.zip "$DEST_DIR/"
+        copied=$((copied + count))
+    fi
+else
+    echo "WARNING: No level_advancement directory found at ${LEVEL_ADV}"
+fi
+
+# Copy best model with a distinguishing name
+if [[ -f "$BEST_MODEL" ]]; then
+    dest_name="scripted_best_model.zip"
+    echo "Best model: ${BEST_MODEL} -> ${dest_name}"
+    if $DRY_RUN; then
+        echo "  Would copy as: ${dest_name}"
+    else
+        cp "$BEST_MODEL" "${DEST_DIR}/${dest_name}"
+        copied=$((copied + 1))
+    fi
+else
+    echo "WARNING: No best model found at ${BEST_MODEL}"
+fi
+
+echo ""
+if $DRY_RUN; then
+    echo "[DRY RUN] No files were copied."
+else
+    echo "Done! Copied ${copied} models to ${DEST_DIR}"
+    echo ""
+    echo "Models deployed:"
+    ls -1 "$DEST_DIR"
+    echo ""
+    echo "Restart the inference server to pick up the new models."
+fi
