@@ -336,6 +336,7 @@ def scripted_board(
                 break
 
             past_rh = rh[:i]
+            last_round = past_rh[-1]
 
             if last_was_supermove:
                 # After supermove: rotate to next column
@@ -343,14 +344,13 @@ def scripted_board(
                 last_was_supermove = False
             elif _two_consecutive_ties(past_rh):
                 # Trigger supermove
-                # Check score from two rounds ago
                 two_ago = past_rh[-2]
                 if two_ago.agent_score == 0:
-                    # Agent scored 0 → rotate column, then supermove
                     current_col = (current_col + 1) % board_size
-                # else: supermove from same column
                 last_was_supermove = True
-            # else: keep playing trap from same column
+            elif last_round.agent_score < last_round.opponent_score:
+                # Lost last round: rotate column
+                current_col = (current_col + 1) % board_size
 
         # Now decide for current round
         if last_was_supermove:
@@ -364,6 +364,10 @@ def scripted_board(
                 current_col = (current_col + 1) % board_size
             return build_supermove_board(board_size, current_col)
         else:
+            # Check if lost last round
+            last_round = rh[round_num - 1] if round_num <= len(rh) else None
+            if last_round and last_round.agent_score < last_round.opponent_score:
+                current_col = (current_col + 1) % board_size
             return build_trap_board(board_size, current_col)
 
     else:

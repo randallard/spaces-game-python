@@ -415,13 +415,32 @@ class TestLevel5:
 
     def test_derives_column_from_round_history(self):
         """Level 5 derives its starting column from round_history[0].agent_board."""
-        # Round 0 used column 1 (cell 3 on size-2 = row 1, col 1)
+        # Round 0 used column 1 (cell 3 on size-2 = row 1, col 1), agent won
         rh = [
             _make_round_history_entry(agent_score=2.0, opponent_score=0.0, agent_board="2|3p2t1pG1f"),
         ]
         board = scripted_board(5, 2, 1, [], round_history=rh)
         first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
-        assert first_piece["position"]["col"] == 1  # same as round 0
+        assert first_piece["position"]["col"] == 1  # won, so stays same column
+
+    def test_rotates_column_on_loss(self):
+        """Level 5 rotates column after losing a round."""
+        # Agent started col 0, lost round 0
+        rh = [
+            _make_round_history_entry(agent_score=0.0, opponent_score=2.0, agent_board="2|2p3t0pG0f"),
+        ]
+        board = scripted_board(5, 2, 1, [], round_history=rh)
+        first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
+        assert first_piece["position"]["col"] == 1, "Should rotate after loss"
+
+    def test_stays_column_on_win(self):
+        """Level 5 keeps same column after winning a round."""
+        rh = [
+            _make_round_history_entry(agent_score=2.0, opponent_score=0.0, agent_board="2|2p3t0pG0f"),
+        ]
+        board = scripted_board(5, 2, 1, [], round_history=rh)
+        first_piece = next(m for m in board["sequence"] if m["type"] == "piece")
+        assert first_piece["position"]["col"] == 0, "Should stay after win"
 
     def test_size3_supermove_valid(self):
         """Supermove boards should be valid for size 3."""
