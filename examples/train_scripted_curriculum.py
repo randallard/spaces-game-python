@@ -109,6 +109,7 @@ def train(
     sp_min_steps: int = 50_000,
     snapshot_freq: int = 50_000,
     pool_size: int = 10,
+    sp_eval_episodes: int = 50,
     snapshot_win_rate: float = 0.30,
     recovery_win_rate: float = 0.55,
     output_dir: Optional[str] = None,
@@ -195,6 +196,7 @@ def train(
         advance_threshold=sp_advance,
         backtrack_threshold=sp_backtrack,
         min_steps_per_level=sp_min_steps,
+        sp_eval_episodes=sp_eval_episodes,
         recovery_win_rate=recovery_win_rate,
         snapshot_win_rate=snapshot_win_rate,
         board_size=board_size,
@@ -397,12 +399,16 @@ if __name__ == "__main__":
         help="Max self-play snapshots to keep (default: 10)",
     )
     parser.add_argument(
+        "--sp-eval-episodes", type=int, default=50,
+        help="Number of eval episodes for self-play win rate (default: 50)",
+    )
+    parser.add_argument(
         "--snapshot-win-rate", type=float, default=0.30,
         help="Quality gate for self-play snapshots (default: 0.30)",
     )
     parser.add_argument(
-        "--recovery-win-rate", type=float, default=0.55,
-        help="Win rate to exit self-play recovery (default: 0.55)",
+        "--recovery-win-rate", type=float, default=0.45,
+        help="Win rate to exit self-play recovery (default: 0.45)",
     )
 
     parser.add_argument(
@@ -436,6 +442,7 @@ if __name__ == "__main__":
         sp_advance=args.sp_advance,
         sp_backtrack=args.sp_backtrack,
         sp_min_steps=args.sp_min_steps,
+        sp_eval_episodes=args.sp_eval_episodes,
         snapshot_freq=args.snapshot_freq,
         pool_size=args.pool_size,
         snapshot_win_rate=args.snapshot_win_rate,

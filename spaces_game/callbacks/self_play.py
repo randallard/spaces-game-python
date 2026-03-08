@@ -174,15 +174,16 @@ class SelfPlayCurriculumCallback(BaseCallback):
         steps_at_level = (self.n_calls - self._level_start_step) * self.n_envs
 
         if self._in_recovery:
-            # In pool recovery — use pool win rate (that's what we're playing against)
-            if pool_win_rate >= self.recovery_win_rate:
+            # Use SP eval win rate if available, fall back to pool win rate
+            recovery_rate = self._sp_win_rate if self._sp_win_rate is not None else pool_win_rate
+            if recovery_rate >= self.recovery_win_rate:
                 self._in_recovery = False
                 self._level_start_step = self.n_calls
                 self.window_level = 0
                 self._activate_self_play()
                 self._save_level_advancement(0, "exit_recovery")
                 if self.verbose >= 1:
-                    print(f"\n  SELF-PLAY: Recovery complete (pool WR {pool_win_rate:.1%}). "
+                    print(f"\n  SELF-PLAY: Recovery complete (WR {recovery_rate:.1%}). "
                           f"Resuming at level 0")
             return
 
@@ -257,6 +258,11 @@ class SelfPlayCurriculumCallback(BaseCallback):
         window_end = min(self.window_level, len(self.snapshot_paths))
         candidates.extend(self.snapshot_paths[:window_end])
 
+        # Fallback: if window is empty but snapshots exist, use the first snapshot
+        # This prevents a dead loop when there's no seed and window_level=0
+        if not candidates and self.snapshot_paths:
+            candidates.append(self.snapshot_paths[0])
+
         if not candidates:
             return  # No opponents to evaluate against
 
@@ -305,7 +311,9 @@ class SelfPlayCurriculumCallback(BaseCallback):
         self.logger.record("self_play/in_recovery", float(self._in_recovery))
         self.logger.record("self_play/pool_snapshots", len(self.snapshot_paths))
         pool_win_rate = self._get_latest_pool_win_rate()
-        self.logger.record("self_play/pool_win_rate", pool_win_rate)
+        # Use SP eval when available (pool_win_rate is stale after scripted phase)
+        effective_win_rate = self._sp_win_rate if self._sp_win_rate is not None else pool_win_rate
+        self.logger.record("self_play/pool_win_rate", effective_win_rate)
         if self._sp_win_rate is not None:
             self.logger.record("self_play/sp_eval_win_rate", self._sp_win_rate)
 
