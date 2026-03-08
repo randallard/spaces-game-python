@@ -99,6 +99,7 @@ class SelfPlayCurriculumCallback(BaseCallback):
         self.max_level = 0  # Highest level ever reached
         self._level_start_step = 0
         self._in_recovery = False
+        self._recovery_scripted_level = 5  # Scripted level used during recovery
 
         # Create snapshot directory
         self.snapshot_dir = os.path.join(output_dir, "opponent_pool")
@@ -180,6 +181,14 @@ class SelfPlayCurriculumCallback(BaseCallback):
                 self._in_recovery = False
                 self._level_start_step = self.n_calls
                 self.window_level = 0
+                # Clear scripted opponents before re-entering self-play
+                for i in range(self.n_envs):
+                    try:
+                        self.training_env.env_method(
+                            "clear_scripted_opponent", indices=[i],
+                        )
+                    except Exception:
+                        pass
                 self._activate_self_play()
                 self._save_level_advancement(0, "exit_recovery")
                 if self.verbose >= 1:
@@ -200,13 +209,24 @@ class SelfPlayCurriculumCallback(BaseCallback):
                     print(f"\n  SELF-PLAY: Backtrack to level {self.window_level} "
                           f"(SP eval {level_win_rate:.1%} < {self.backtrack_threshold:.1%})")
             else:
-                # Already at level 0 and still failing — enter pool recovery
+                # Already at level 0 and still failing — enter scripted recovery
                 self._in_recovery = True
                 self._level_start_step = self.n_calls
                 self._set_ratio(0.0)
+                # Use scripted opponents instead of static pool boards
+                self._recovery_scripted_level = 5  # Start at hardest
+                for i in range(self.n_envs):
+                    try:
+                        self.training_env.env_method(
+                            "set_scripted_opponent_level",
+                            self._recovery_scripted_level,
+                            indices=[i],
+                        )
+                    except Exception:
+                        pass
                 self._save_level_advancement(0, "enter_recovery")
                 if self.verbose >= 1:
-                    print(f"\n  SELF-PLAY: Entering pool recovery "
+                    print(f"\n  SELF-PLAY: Entering scripted recovery (level {self._recovery_scripted_level}) "
                           f"(SP eval {level_win_rate:.1%} < {self.backtrack_threshold:.1%})")
             return
 
