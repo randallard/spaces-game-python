@@ -74,19 +74,17 @@ def make_env(
     return _init
 
 
-def find_simple_pool(board_size: int) -> str:
-    """Find the simple pool file for a given board size."""
+def find_simple_pool(board_size: int) -> Optional[str]:
+    """Find the simple pool file for a given board size, if one exists."""
     pool_dir = Path(f"boards/size{board_size}")
     candidates = [
         pool_dir / "00_simple.json",
         pool_dir / "simple.json",
     ]
     for path in candidates:
-        if path.exists():
+        if path.exists() and path.stat().st_size > 0:
             return str(path)
-    print(f"ERROR: No simple pool found in {pool_dir}/")
-    print(f"  Checked: {', '.join(str(c) for c in candidates)}")
-    sys.exit(1)
+    return None
 
 
 def train(
@@ -118,8 +116,8 @@ def train(
 ):
     """Train MaskablePPO: scripted curriculum then self-play."""
     simple_pool = find_simple_pool(board_size)
-    opponent_pools = [simple_pool]
-    phase_map = {0: [0]}
+    opponent_pools = [simple_pool] if simple_pool else []
+    phase_map = {0: [0]} if simple_pool else {}
 
     if output_dir is None:
         output_dir = f"models/size{board_size}/scripted"
@@ -138,7 +136,7 @@ def train(
     print(f"N steps (total):   {n_steps} ({n_steps // n_envs} per env)")
     print(f"Batch size:        {batch_size}")
     print(f"Output directory:  {output_dir}")
-    print(f"\nFallback pool:     {simple_pool}")
+    print(f"\nFallback pool:     {simple_pool or '(none — using generated fallback boards)'}")
     print(f"\nPhase 1 — Scripted curriculum (levels 1-5):")
     print(f"  Advance gate:    {scripted_advance:.0%} game WR")
     print(f"  Min steps/level: {scripted_min_steps:,}")

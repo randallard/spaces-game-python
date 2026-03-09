@@ -14,6 +14,7 @@ Progressive opponent curriculum:
 """
 
 import collections
+import os
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -80,16 +81,22 @@ class SimultaneousPlayEnv(gym.Env):
         self.max_construction_steps = max_construction_steps
         self.phase_map = phase_map or DEFAULT_PHASE_MAP
 
-        # Load opponent board pools
+        # Load opponent board pools (optional — scripted curriculum doesn't need them)
         if opponent_pools is None:
-            opponent_pools = [f"boards/size{board_size}/simple.json"]
+            default_pool = f"boards/size{board_size}/simple.json"
+            if os.path.exists(default_pool) and os.path.getsize(default_pool) > 0:
+                opponent_pools = [default_pool]
+            else:
+                opponent_pools = []
 
         self.opponent_pool_paths = opponent_pools
         self.opponent_pools: List[List[Board]] = []
         for path in opponent_pools:
+            if not os.path.exists(path) or os.path.getsize(path) == 0:
+                continue
             boards = load_boards_from_json(path)
             if len(boards) == 0:
-                raise ValueError(f"Empty board pool: {path}")
+                continue
             self.opponent_pools.append(boards)
 
         # board_library_path accepted for backward compatibility but ignored
@@ -200,6 +207,9 @@ class SimultaneousPlayEnv(gym.Env):
         The pool is chosen once at game reset so the opponent plays a
         consistent style across all 5 rounds (e.g., all simple boards
         or all super_move boards), matching how a real opponent would play.
+
+        Falls back to a generated simple board if no pools are loaded
+        (e.g., scripted curriculum mode).
         """
         pool = getattr(self, '_game_pool', None)
         if not pool:
@@ -207,8 +217,31 @@ class SimultaneousPlayEnv(gym.Env):
             active = self._get_active_pools()
             if not active:
                 active = self.opponent_pools
-            pool = active[np.random.randint(len(active))] if active else self.opponent_pools[0]
+            pool = active[np.random.randint(len(active))] if active else None
+        if not pool:
+            return self._generate_fallback_board()
         return pool[np.random.randint(len(pool))]
+
+    def _generate_fallback_board(self) -> Board:
+        """Generate a simple straight-path board as fallback when no pools loaded."""
+        col = int(np.random.randint(self.board_size))
+        sequence = []
+        grid = [["empty"] * self.board_size for _ in range(self.board_size)]
+        order = 1
+        for row in range(self.board_size - 1, -1, -1):
+            grid[row][col] = "piece"
+            sequence.append(BoardMove(
+                position=Position(row=row, col=col), type="piece", order=order,
+            ))
+            order += 1
+        sequence.append(BoardMove(
+            position=Position(row=-1, col=col), type="final", order=order,
+        ))
+        return Board(
+            sequence=tuple(sequence),
+            boardSize=self.board_size,
+            grid=tuple(tuple(r) for r in grid),
+        )
 
     # --- Board encoding ---
 
