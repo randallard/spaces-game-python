@@ -110,6 +110,7 @@ def train(
     sp_eval_episodes: int = 50,
     snapshot_win_rate: float = 0.30,
     recovery_win_rate: float = 0.55,
+    net_arch: Optional[List[int]] = None,
     output_dir: Optional[str] = None,
     discord_webhook: Optional[str] = None,
     discord_check_in: int = 30,
@@ -135,6 +136,7 @@ def train(
     print(f"Entropy coeff:     {ent_coef}")
     print(f"N steps (total):   {n_steps} ({n_steps // n_envs} per env)")
     print(f"Batch size:        {batch_size}")
+    print(f"Net architecture:  {net_arch or '[64, 64] (default)'}")
     print(f"Output directory:  {output_dir}")
     print(f"\nFallback pool:     {simple_pool or '(none — using generated fallback boards)'}")
     print(f"\nPhase 1 — Scripted curriculum (levels 1-5):")
@@ -260,6 +262,10 @@ def train(
         callbacks.append(discord_callback)
 
     # Initialize model from scratch
+    policy_kwargs = {}
+    if net_arch:
+        policy_kwargs["net_arch"] = dict(pi=net_arch, vf=net_arch)
+
     print("\nInitializing MaskablePPO agent (fresh, no pre-training)...")
     model = MaskablePPO(
         "MultiInputPolicy",
@@ -274,6 +280,7 @@ def train(
         gae_lambda=0.95,
         clip_range=0.2,
         ent_coef=ent_coef,
+        **({"policy_kwargs": policy_kwargs} if policy_kwargs else {}),
     )
 
     # Train
@@ -414,6 +421,10 @@ if __name__ == "__main__":
         help="Output directory (default: models/size{N}/scripted)",
     )
     parser.add_argument(
+        "--net-arch", type=str, default=None,
+        help="Network hidden layer sizes, comma-separated (e.g., '256,256'). Default: 64,64",
+    )
+    parser.add_argument(
         "--discord-webhook", type=str, default=None,
         help="Discord webhook URL for training notifications",
     )
@@ -423,6 +434,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    # Parse net_arch from comma-separated string
+    parsed_net_arch = None
+    if args.net_arch:
+        parsed_net_arch = [int(x.strip()) for x in args.net_arch.split(",")]
 
     train(
         board_size=args.size,
@@ -445,6 +461,7 @@ if __name__ == "__main__":
         pool_size=args.pool_size,
         snapshot_win_rate=args.snapshot_win_rate,
         recovery_win_rate=args.recovery_win_rate,
+        net_arch=parsed_net_arch,
         output_dir=args.output_dir,
         discord_webhook=args.discord_webhook,
         discord_check_in=args.discord_check_in,
