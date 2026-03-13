@@ -2,7 +2,19 @@
 Model registry for managing skill-level-to-model mapping.
 
 Handles convention-based discovery of model checkpoints and provides
-a cache of loaded models keyed by (board_size, stage, checkpoint_type).
+a cache of loaded models keyed by (board_size, checkpoint_type).
+
+Directory structure:
+    {models_dir}/size{N}/
+    ├── best_model.zip              # best trained model
+    ├── difficulty/                  # skill-level checkpoints
+    │   ├── beginner.zip
+    │   ├── intermediate.zip
+    │   ├── advanced.zip
+    │   ├── advanced_plus.zip
+    │   └── expert.zip
+    ├── scripted_checkpoints/       # models trained against scripted agents
+    └── level_advancement/          # curriculum level snapshots (3: first, mid, last)
 """
 
 import hashlib
@@ -26,61 +38,54 @@ SKILL_LEVEL_CONFIG: Dict[str, Tuple[str, bool]] = {
     "advanced_plus":     ("advanced", True),
 }
 
-# Agent type -> stage directory name
-AGENT_TYPE_TO_STAGE: Dict[str, str] = {
-    "standard": "stage3",
-    "fog": "stage4",
+# Difficulty filename -> checkpoint_type mapping
+DIFFICULTY_TO_CHECKPOINT: Dict[str, str] = {
+    "beginner": "early",
+    "intermediate": "mid",
+    "advanced": "advanced",
+    "advanced_plus": "advanced",
+    "expert": "advanced",
 }
 
 
-def generate_model_id(board_size: int, stage: str, label: str) -> str:
-    """Generate a stable, short model ID from board_size, stage, and label.
+def generate_model_id(board_size: int, category: str, label: str) -> str:
+    """Generate a stable, short model ID from board_size, category, and label.
 
-    Uses first 8 hex chars of SHA256("{board_size}:{stage}:{label}").
+    Uses first 8 hex chars of SHA256("{board_size}:{category}:{label}").
     """
-    key = f"{board_size}:{stage}:{label}"
+    key = f"{board_size}:{category}:{label}"
     return hashlib.sha256(key.encode()).hexdigest()[:8]
-
-
-def _extract_step_count(filename: str) -> Optional[int]:
-    """Extract step count from a checkpoint filename like 'ppo_100000_steps.zip'."""
-    match = re.search(r"_(\d+)_steps\.zip$", filename)
-    if match:
-        return int(match.group(1))
-    return None
 
 
 class ModelRegistry:
     """Registry that loads and caches models, mapping skill levels to checkpoints.
 
     Convention-based discovery:
-    - Models are expected in {models_dir}/size{N}/stage{3,4}/
-    - "early" checkpoint: earliest step checkpoint or files matching *_early*
-    - "mid" checkpoint: mid-range step checkpoint or files matching *_mid*
-    - "advanced" checkpoint: latest/best/final model
-    - Fallback: if only one model exists for a size, use it for all checkpoints
+    - Models are expected in {models_dir}/size{N}/
+    - difficulty/ contains skill-level checkpoints (beginner, intermediate, etc.)
+    - scripted_checkpoints/ contains models trained against scripted agents
+    - level_advancement/ contains curriculum level snapshots
+    - best_model.zip is the best trained model
+    - All models are fog-of-war (use_fog=True)
     """
 
-    def __init__(self, models_dir: str = "models/", boards_dir: str = "boards/"):
+    def __init__(self, models_dir: str = "inference_server/models/", boards_dir: str = "boards/"):
         self.models_dir = models_dir
         self.boards_dir = boards_dir
 
-        # Cache: (board_size, stage, checkpoint_type) -> (model, uses_masks)
-        self._model_cache: Dict[Tuple[int, str, str], Tuple[object, bool]] = {}
+        # Cache: (board_size, checkpoint_type) -> (model, uses_masks)
+        self._model_cache: Dict[Tuple[int, str], Tuple[object, bool]] = {}
 
-        # Discovered model paths: (board_size, stage, checkpoint_type) -> path
-        self._model_paths: Dict[Tuple[int, str, str], str] = {}
+        # Discovered model paths: (board_size, checkpoint_type) -> path
+        self._model_paths: Dict[Tuple[int, str], str] = {}
 
         # Discovered board sizes
         self._board_sizes: List[int] = []
 
-        # Available stages per board size
-        self._stages_by_size: Dict[int, List[str]] = {}
-
         # Opponent pools cache: board_size -> list of pool paths
         self._opponent_pools: Dict[int, List[str]] = {}
 
-        # Flat indexed list of all models (skill-level + level_advancement)
+        # Flat indexed list of all models
         self._indexed_models: List[dict] = []
 
         # Reverse lookup: model_id -> index
@@ -96,7 +101,6 @@ class ModelRegistry:
             logger.warning("Models directory does not exist: %s", self.models_dir)
             return
 
-        # Look for size{N}/stage{3,4}/ directories
         for size_dir in sorted(base.glob("size*")):
             if not size_dir.is_dir():
                 continue
@@ -105,26 +109,23 @@ class ModelRegistry:
                 continue
             board_size = int(match.group(1))
 
-            stages_found = []
-            for stage in ["stage3", "stage4"]:
-                stage_dir = size_dir / stage
-                if not stage_dir.exists():
-                    logger.debug("No %s directory for size %d", stage, board_size)
-                    continue
+            # Discover difficulty checkpoints for skill-level mapping
+            difficulty_dir = size_dir / "difficulty"
+            if difficulty_dir.is_dir():
+                self._assign_difficulty_checkpoints(board_size, difficulty_dir)
 
-                # Gather all zip files
-                zip_files = sorted(stage_dir.glob("*.zip"))
-                if not zip_files:
-                    logger.debug("No model files in %s", stage_dir)
-                    continue
+            # Check if we found any models for this size
+            has_models = any(
+                k[0] == board_size for k in self._model_paths
+            )
 
-                stages_found.append(stage)
-                self._assign_checkpoints(board_size, stage, zip_files)
+            # Also check for any zip files in subdirs
+            if not has_models:
+                has_models = any(size_dir.rglob("*.zip"))
 
-            if stages_found:
+            if has_models:
                 if board_size not in self._board_sizes:
                     self._board_sizes.append(board_size)
-                self._stages_by_size[board_size] = stages_found
 
         # Build the flat indexed list from all discovered models
         self._build_indexed_models()
@@ -141,115 +142,59 @@ class ModelRegistry:
                 )
 
         logger.info(
-            "Discovery complete: %d board sizes, %d model paths",
-            len(self._board_sizes), len(self._model_paths),
+            "Discovery complete: %d board sizes, %d skill-level paths, %d indexed models",
+            len(self._board_sizes), len(self._model_paths), len(self._indexed_models),
         )
 
-    def _assign_checkpoints(self, board_size: int, stage: str, zip_files: List[Path]) -> None:
-        """Assign zip files to checkpoint types (early, mid, advanced)."""
-        if len(zip_files) == 0:
-            return
-
-        # If only one model, use it for all checkpoint types
-        if len(zip_files) == 1:
-            path_str = str(zip_files[0])
-            for checkpoint_type in ("early", "mid", "advanced"):
-                self._model_paths[(board_size, stage, checkpoint_type)] = path_str
+    def _assign_difficulty_checkpoints(self, board_size: int, difficulty_dir: Path) -> None:
+        """Assign difficulty files to checkpoint types (early, mid, advanced)."""
+        for zip_file in sorted(difficulty_dir.glob("*.zip")):
+            name = zip_file.stem.lower()
+            checkpoint_type = DIFFICULTY_TO_CHECKPOINT.get(name)
+            if checkpoint_type is None:
+                continue
+            # Later files overwrite earlier ones for the same checkpoint_type,
+            # so expert.zip overwrites advanced.zip for "advanced" — that's fine
+            self._model_paths[(board_size, checkpoint_type)] = str(zip_file)
             logger.info(
-                "Single model for size %d %s, using for all checkpoints: %s",
-                board_size, stage, zip_files[0].name,
+                "Size %d, %s checkpoint (%s): %s",
+                board_size, checkpoint_type, name, zip_file.name,
             )
-            return
-
-        # Look for explicitly named checkpoints first
-        named_map: Dict[str, Optional[Path]] = {
-            "early": None,
-            "mid": None,
-            "advanced": None,
-        }
-
-        for f in zip_files:
-            name_lower = f.name.lower()
-            if any(kw in name_lower for kw in ("early", "beginner")):
-                named_map["early"] = f
-            elif any(kw in name_lower for kw in ("mid", "intermediate")):
-                named_map["mid"] = f
-            elif any(kw in name_lower for kw in ("best", "final", "advanced", "expert")):
-                named_map["advanced"] = f
-
-        # Try step-count-based assignment for any remaining gaps
-        step_files: List[Tuple[int, Path]] = []
-        for f in zip_files:
-            step = _extract_step_count(f.name)
-            if step is not None:
-                step_files.append((step, f))
-
-        step_files.sort(key=lambda x: x[0])
-
-        if step_files:
-            if named_map["early"] is None:
-                named_map["early"] = step_files[0][1]
-            if named_map["advanced"] is None:
-                named_map["advanced"] = step_files[-1][1]
-            if named_map["mid"] is None:
-                mid_idx = len(step_files) // 2
-                named_map["mid"] = step_files[mid_idx][1]
-
-        # Also look for best_model.zip in a 'best' subdirectory
-        for f in zip_files:
-            if f.parent.name == "best" or "best" in f.name.lower():
-                if named_map["advanced"] is None:
-                    named_map["advanced"] = f
-                break
-
-        # Final fallback: use last file for any remaining gaps
-        fallback = zip_files[-1]
-        for checkpoint_type in ("early", "mid", "advanced"):
-            if named_map[checkpoint_type] is None:
-                named_map[checkpoint_type] = fallback
-
-        for checkpoint_type, path in named_map.items():
-            if path is not None:
-                self._model_paths[(board_size, stage, checkpoint_type)] = str(path)
-                logger.info(
-                    "Size %d %s, %s checkpoint: %s",
-                    board_size, stage, checkpoint_type, path.name,
-                )
 
     def load_all(self) -> None:
         """Load all discovered models into cache."""
-        for (board_size, stage, checkpoint_type), path in self._model_paths.items():
-            if (board_size, stage, checkpoint_type) in self._model_cache:
+        for (board_size, checkpoint_type), path in self._model_paths.items():
+            if (board_size, checkpoint_type) in self._model_cache:
                 continue
             try:
                 model, uses_masks = load_agent(path)
-                self._model_cache[(board_size, stage, checkpoint_type)] = (model, uses_masks)
+                self._model_cache[(board_size, checkpoint_type)] = (model, uses_masks)
                 logger.info(
-                    "Loaded model: size=%d, stage=%s, checkpoint=%s, path=%s, masks=%s",
-                    board_size, stage, checkpoint_type, path, uses_masks,
+                    "Loaded model: size=%d, checkpoint=%s, path=%s, masks=%s",
+                    board_size, checkpoint_type, path, uses_masks,
                 )
             except Exception as e:
                 logger.error(
-                    "Failed to load model: size=%d, stage=%s, checkpoint=%s, path=%s: %s",
-                    board_size, stage, checkpoint_type, path, e,
+                    "Failed to load model: size=%d, checkpoint=%s, path=%s: %s",
+                    board_size, checkpoint_type, path, e,
                 )
 
     def get_model(
-        self, board_size: int, skill_level: str, agent_type: str = "standard",
+        self, board_size: int, skill_level: str, agent_type: str = "fog",
     ) -> Tuple[object, bool, bool]:
-        """Get a loaded model for the given board size, skill level, and agent type.
+        """Get a loaded model for the given board size and skill level.
 
         Args:
             board_size: Grid dimension (NxN).
             skill_level: One of the SKILL_LEVEL_CONFIG keys.
-            agent_type: "standard" or "fog".
+            agent_type: Kept for API compatibility (ignored, all models are fog).
 
         Returns:
             Tuple of (model, uses_masks, deterministic).
 
         Raises:
-            ValueError: If skill_level or agent_type is unknown.
-            KeyError: If no model is available for the given board_size, stage, and checkpoint.
+            ValueError: If skill_level is unknown.
+            KeyError: If no model is available for the given board_size and checkpoint.
         """
         if skill_level not in SKILL_LEVEL_CONFIG:
             raise ValueError(
@@ -257,15 +202,8 @@ class ModelRegistry:
                 f"Available: {list(SKILL_LEVEL_CONFIG.keys())}"
             )
 
-        if agent_type not in AGENT_TYPE_TO_STAGE:
-            raise ValueError(
-                f"Unknown agent type: {agent_type}. "
-                f"Available: {list(AGENT_TYPE_TO_STAGE.keys())}"
-            )
-
-        stage = AGENT_TYPE_TO_STAGE[agent_type]
         checkpoint_type, deterministic = SKILL_LEVEL_CONFIG[skill_level]
-        cache_key = (board_size, stage, checkpoint_type)
+        cache_key = (board_size, checkpoint_type)
 
         if cache_key not in self._model_cache:
             # Try to load on-demand if path is known
@@ -276,7 +214,6 @@ class ModelRegistry:
             else:
                 raise KeyError(
                     f"No model available for board_size={board_size}, "
-                    f"agent_type={agent_type} (stage={stage}), "
                     f"checkpoint={checkpoint_type}. "
                     f"Available: {list(self._model_paths.keys())}"
                 )
@@ -285,53 +222,37 @@ class ModelRegistry:
         return model, uses_masks, deterministic
 
     def get_opponent_pools(self, board_size: int) -> List[str]:
-        """Get opponent pool paths for a given board size.
-
-        Args:
-            board_size: Grid dimension.
-
-        Returns:
-            List of JSON file paths for opponent pools.
-        """
+        """Get opponent pool paths for a given board size."""
         return self._opponent_pools.get(board_size, [])
 
     def _build_indexed_models(self) -> None:
         """Build a flat indexed list of all discovered models.
 
-        Includes skill-level checkpoints (early/mid/advanced) and
-        models from level_advancement/ and more_available_models/
-        subdirectories under each stage directory.
+        Scans difficulty/, scripted_checkpoints/, level_advancement/,
+        and best_model.zip under each size directory.
         Each entry gets a stable `model_id` (8-char hex hash).
         """
         self._indexed_models = []
         self._model_id_to_index = {}
         seen_paths: set = set()
 
-        def _add_model(board_size: int, stage: str, label: str, path: str, use_fog: bool) -> None:
-            model_id = generate_model_id(board_size, stage, label)
+        def _add_model(board_size: int, category: str, label: str, path: str) -> None:
+            model_id = generate_model_id(board_size, category, label)
             idx = len(self._indexed_models)
             self._indexed_models.append({
                 "index": idx,
                 "model_id": model_id,
                 "board_size": board_size,
-                "stage": stage,
+                "category": category,
                 "label": label,
                 "path": path,
-                "use_fog": use_fog,
+                "use_fog": True,
             })
             self._model_id_to_index[model_id] = idx
 
-        # First, add skill-level checkpoints (deduplicated by path)
-        for (board_size, stage, checkpoint_type), path in sorted(self._model_paths.items()):
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            use_fog = stage == "stage4"
-            label = Path(path).stem  # e.g., "beginner", "expert", "ppo_100000_steps"
-            _add_model(board_size, stage, label, path, use_fog)
-
-        # Then, scan level_advancement/ subdirectories
         base = Path(self.models_dir)
+        subdirs = ["difficulty", "scripted_checkpoints", "level_advancement"]
+
         for size_dir in sorted(base.glob("size*")):
             if not size_dir.is_dir():
                 continue
@@ -340,33 +261,33 @@ class ModelRegistry:
                 continue
             board_size = int(match.group(1))
 
-            for stage in ["stage3", "stage4"]:
-                for subdir_name in ["level_advancement", "more_available_models"]:
-                    subdir = size_dir / stage / subdir_name
-                    if not subdir.is_dir():
-                        continue
+            # Add best_model.zip at the size level
+            best = size_dir / "best_model.zip"
+            if best.is_file():
+                path_str = str(best)
+                if path_str not in seen_paths:
+                    seen_paths.add(path_str)
+                    _add_model(board_size, "best", "best_model", path_str)
 
-                    for zip_file in sorted(subdir.glob("*.zip")):
-                        path_str = str(zip_file)
-                        if path_str in seen_paths:
-                            continue
-                        seen_paths.add(path_str)
-                        use_fog = stage == "stage4"
-                        _add_model(board_size, stage, zip_file.stem, path_str, use_fog)
+            # Scan each subdirectory
+            for subdir_name in subdirs:
+                subdir = size_dir / subdir_name
+                if not subdir.is_dir():
+                    continue
+                for zip_file in sorted(subdir.glob("*.zip")):
+                    path_str = str(zip_file)
+                    if path_str in seen_paths:
+                        continue
+                    seen_paths.add(path_str)
+                    _add_model(board_size, subdir_name, zip_file.stem, path_str)
 
         logger.info("Indexed %d total models", len(self._indexed_models))
 
     def get_model_by_index(self, index: int) -> Tuple[object, bool, bool]:
         """Get a model by its flat index.
 
-        Args:
-            index: The model index from the indexed list.
-
         Returns:
             Tuple of (model, uses_masks, use_fog).
-
-        Raises:
-            IndexError: If the index is out of range.
         """
         if index < 0 or index >= len(self._indexed_models):
             raise IndexError(
@@ -386,14 +307,8 @@ class ModelRegistry:
     def get_model_by_id(self, model_id: str) -> Tuple[object, bool, bool]:
         """Get a model by its stable model ID.
 
-        Args:
-            model_id: The 8-char hex model ID.
-
         Returns:
             Tuple of (model, uses_masks, use_fog).
-
-        Raises:
-            KeyError: If the model_id is not found.
         """
         if model_id not in self._model_id_to_index:
             raise KeyError(
@@ -404,17 +319,7 @@ class ModelRegistry:
         return self.get_model_by_index(index)
 
     def get_model_meta_by_id(self, model_id: str) -> dict:
-        """Get model metadata by its stable model ID.
-
-        Args:
-            model_id: The 8-char hex model ID.
-
-        Returns:
-            The metadata dict for the model.
-
-        Raises:
-            KeyError: If the model_id is not found.
-        """
+        """Get model metadata by its stable model ID."""
         if model_id not in self._model_id_to_index:
             raise KeyError(
                 f"Unknown model_id: {model_id}. "
@@ -428,36 +333,27 @@ class ModelRegistry:
         return self._indexed_models
 
     def get_loaded_models_info(self) -> dict:
-        """Get summary of all loaded models for the /info endpoint.
-
-        Returns:
-            Dict mapping "size{N}" to dict of agent_type -> list of checkpoints.
-        """
-        info: Dict[str, Dict[str, list]] = {}
-        for (board_size, stage, checkpoint_type) in self._model_cache:
+        """Get summary of all loaded models for the /info endpoint."""
+        info: Dict[str, list] = {}
+        for (board_size, checkpoint_type) in self._model_cache:
             key = f"size{board_size}"
-            # Map stage back to agent_type
-            agent_type = "fog" if stage == "stage4" else "standard"
             if key not in info:
-                info[key] = {}
-            if agent_type not in info[key]:
-                info[key][agent_type] = []
-            path = self._model_paths.get((board_size, stage, checkpoint_type), "unknown")
-            info[key][agent_type].append({
+                info[key] = []
+            path = self._model_paths.get((board_size, checkpoint_type), "unknown")
+            info[key].append({
                 "checkpoint": checkpoint_type,
                 "path": path,
             })
         return info
 
     def get_available_agent_types(self, board_size: int) -> List[str]:
-        """Return list of agent types available for a given board size."""
-        stages = self._stages_by_size.get(board_size, [])
-        agent_types = []
-        if "stage3" in stages:
-            agent_types.append("standard")
-        if "stage4" in stages:
-            agent_types.append("fog")
-        return agent_types
+        """Return list of agent types available for a given board size.
+
+        All models are fog-of-war now.
+        """
+        if board_size in self._board_sizes:
+            return ["fog"]
+        return []
 
     @property
     def supported_board_sizes(self) -> List[int]:

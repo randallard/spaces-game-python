@@ -11,61 +11,45 @@ import pytest
 from inference_server.model_registry import (
     ModelRegistry,
     SKILL_LEVEL_CONFIG,
-    _extract_step_count,
     generate_model_id,
 )
 
 
 # ---------------------------------------------------------------------------
-# _extract_step_count tests
+# generate_model_id tests
 # ---------------------------------------------------------------------------
 
 class TestGenerateModelId:
 
     def test_deterministic(self):
         """Same inputs always produce the same ID."""
-        id1 = generate_model_id(3, "stage3", "my_model")
-        id2 = generate_model_id(3, "stage3", "my_model")
+        id1 = generate_model_id(3, "difficulty", "my_model")
+        id2 = generate_model_id(3, "difficulty", "my_model")
         assert id1 == id2
 
     def test_length(self):
         """Model ID should be exactly 8 hex characters."""
-        model_id = generate_model_id(3, "stage3", "my_model")
+        model_id = generate_model_id(3, "difficulty", "my_model")
         assert len(model_id) == 8
         assert all(c in "0123456789abcdef" for c in model_id)
 
     def test_uniqueness_different_sizes(self):
         """Different board sizes produce different IDs."""
-        id1 = generate_model_id(2, "stage3", "my_model")
-        id2 = generate_model_id(3, "stage3", "my_model")
+        id1 = generate_model_id(2, "difficulty", "my_model")
+        id2 = generate_model_id(3, "difficulty", "my_model")
         assert id1 != id2
 
-    def test_uniqueness_different_stages(self):
-        """Different stages produce different IDs."""
-        id1 = generate_model_id(3, "stage3", "my_model")
-        id2 = generate_model_id(3, "stage4", "my_model")
+    def test_uniqueness_different_categories(self):
+        """Different categories produce different IDs."""
+        id1 = generate_model_id(3, "difficulty", "my_model")
+        id2 = generate_model_id(3, "scripted_checkpoints", "my_model")
         assert id1 != id2
 
     def test_uniqueness_different_labels(self):
         """Different labels produce different IDs."""
-        id1 = generate_model_id(3, "stage3", "model_a")
-        id2 = generate_model_id(3, "stage3", "model_b")
+        id1 = generate_model_id(3, "difficulty", "model_a")
+        id2 = generate_model_id(3, "difficulty", "model_b")
         assert id1 != id2
-
-
-class TestExtractStepCount:
-
-    def test_standard_format(self):
-        assert _extract_step_count("ppo_100000_steps.zip") == 100000
-
-    def test_with_prefix(self):
-        assert _extract_step_count("stage3_500000_steps.zip") == 500000
-
-    def test_no_match(self):
-        assert _extract_step_count("best_model.zip") is None
-
-    def test_final_model(self):
-        assert _extract_step_count("ppo_stage3_final.zip") is None
 
 
 # ---------------------------------------------------------------------------
@@ -110,91 +94,14 @@ class TestSkillLevelConfig:
 
 class TestModelRegistryDiscovery:
 
-    def test_discover_single_model(self):
-        """Test that a single model is used for all checkpoint types."""
+    def test_discover_difficulty_checkpoints(self):
+        """Test that difficulty files map to early/mid/advanced checkpoints."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create models/size2/stage3/model.zip
-            stage3_dir = Path(tmpdir) / "size2" / "stage3"
-            stage3_dir.mkdir(parents=True)
-            (stage3_dir / "model.zip").write_bytes(b"fake")
-
-            # Create boards/size2/simple.json
-            boards_dir = Path(tmpdir) / "boards"
-            size2_boards = boards_dir / "size2"
-            size2_boards.mkdir(parents=True)
-            (size2_boards / "simple.json").write_text("[]")
-
-            registry = ModelRegistry(
-                models_dir=str(Path(tmpdir)),
-                boards_dir=str(boards_dir),
-            )
-            registry.discover_models()
-
-            assert 2 in registry.supported_board_sizes
-            # Single model should be assigned to all three checkpoints
-            assert (2, "early") in registry._model_paths
-            assert (2, "mid") in registry._model_paths
-            assert (2, "advanced") in registry._model_paths
-
-    def test_discover_multiple_step_models(self):
-        """Test assignment of early/mid/advanced from step checkpoints."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "size2" / "stage3"
-            stage3_dir.mkdir(parents=True)
-
-            (stage3_dir / "ppo_100000_steps.zip").write_bytes(b"fake")
-            (stage3_dir / "ppo_500000_steps.zip").write_bytes(b"fake")
-            (stage3_dir / "ppo_1000000_steps.zip").write_bytes(b"fake")
-
-            boards_dir = Path(tmpdir) / "boards"
-            size2_boards = boards_dir / "size2"
-            size2_boards.mkdir(parents=True)
-            (size2_boards / "simple.json").write_text("[]")
-
-            registry = ModelRegistry(
-                models_dir=str(Path(tmpdir)),
-                boards_dir=str(boards_dir),
-            )
-            registry.discover_models()
-
-            assert 2 in registry.supported_board_sizes
-            # Early should be lowest step
-            assert "100000" in registry._model_paths[(2, "early")]
-            # Advanced should be highest step
-            assert "1000000" in registry._model_paths[(2, "advanced")]
-
-    def test_discover_named_checkpoints(self):
-        """Test that explicitly named files (early, mid, best) are found."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "size3" / "stage3"
-            stage3_dir.mkdir(parents=True)
-
-            (stage3_dir / "model_early.zip").write_bytes(b"fake")
-            (stage3_dir / "model_mid.zip").write_bytes(b"fake")
-            (stage3_dir / "best_model.zip").write_bytes(b"fake")
-
-            boards_dir = Path(tmpdir) / "boards"
-
-            registry = ModelRegistry(
-                models_dir=str(Path(tmpdir)),
-                boards_dir=str(boards_dir),
-            )
-            registry.discover_models()
-
-            assert 3 in registry.supported_board_sizes
-            assert "early" in registry._model_paths[(3, "early")]
-            assert "mid" in registry._model_paths[(3, "mid")]
-            assert "best" in registry._model_paths[(3, "advanced")]
-
-    def test_discover_alternative_named_checkpoints(self):
-        """Test that beginner/intermediate/expert names are recognized."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "size3" / "stage3"
-            stage3_dir.mkdir(parents=True)
-
-            (stage3_dir / "beginner.zip").write_bytes(b"fake")
-            (stage3_dir / "intermediate.zip").write_bytes(b"fake")
-            (stage3_dir / "expert.zip").write_bytes(b"fake")
+            diff_dir = Path(tmpdir) / "size3" / "difficulty"
+            diff_dir.mkdir(parents=True)
+            (diff_dir / "beginner.zip").write_bytes(b"fake")
+            (diff_dir / "intermediate.zip").write_bytes(b"fake")
+            (diff_dir / "expert.zip").write_bytes(b"fake")
 
             boards_dir = Path(tmpdir) / "boards"
 
@@ -219,12 +126,11 @@ class TestModelRegistryDiscovery:
 
         assert registry.supported_board_sizes == []
 
-    def test_discover_empty_stage3_dir(self):
-        """Test graceful handling when stage3 directory is empty."""
+    def test_discover_empty_size_dir(self):
+        """Test graceful handling when size directory has no subdirs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "size2" / "stage3"
-            stage3_dir.mkdir(parents=True)
-            # No zip files
+            size_dir = Path(tmpdir) / "size2"
+            size_dir.mkdir(parents=True)
 
             registry = ModelRegistry(models_dir=str(Path(tmpdir)), boards_dir=str(tmpdir))
             registry.discover_models()
@@ -234,9 +140,9 @@ class TestModelRegistryDiscovery:
     def test_opponent_pools_discovered(self):
         """Test that opponent pools are found during discovery."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "models" / "size2" / "stage3"
-            stage3_dir.mkdir(parents=True)
-            (stage3_dir / "model.zip").write_bytes(b"fake")
+            diff_dir = Path(tmpdir) / "models" / "size2" / "difficulty"
+            diff_dir.mkdir(parents=True)
+            (diff_dir / "beginner.zip").write_bytes(b"fake")
 
             boards_dir = Path(tmpdir) / "boards"
             size2_boards = boards_dir / "size2"
@@ -252,6 +158,56 @@ class TestModelRegistryDiscovery:
 
             pools = registry.get_opponent_pools(2)
             assert len(pools) == 2
+
+    def test_discover_all_subdirs(self):
+        """Test that difficulty, scripted_checkpoints, level_advancement, and best_model are indexed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            size_dir = Path(tmpdir) / "size4"
+
+            diff_dir = size_dir / "difficulty"
+            diff_dir.mkdir(parents=True)
+            (diff_dir / "beginner.zip").write_bytes(b"fake")
+            (diff_dir / "expert.zip").write_bytes(b"fake")
+
+            sc_dir = size_dir / "scripted_checkpoints"
+            sc_dir.mkdir(parents=True)
+            (sc_dir / "cleared_level1.zip").write_bytes(b"fake")
+            (sc_dir / "cleared_level3.zip").write_bytes(b"fake")
+
+            la_dir = size_dir / "level_advancement"
+            la_dir.mkdir(parents=True)
+            (la_dir / "level0_first.zip").write_bytes(b"fake")
+            (la_dir / "level5_mid.zip").write_bytes(b"fake")
+            (la_dir / "level10_last.zip").write_bytes(b"fake")
+
+            (size_dir / "best_model.zip").write_bytes(b"fake")
+
+            registry = ModelRegistry(
+                models_dir=str(Path(tmpdir)),
+                boards_dir=str(tmpdir),
+            )
+            registry.discover_models()
+
+            assert 4 in registry.supported_board_sizes
+            models = registry.get_indexed_models_info()
+            # 1 best + 2 difficulty + 2 scripted + 3 level_advancement = 8
+            assert len(models) == 8
+
+            categories = {m["category"] for m in models}
+            assert categories == {"best", "difficulty", "scripted_checkpoints", "level_advancement"}
+
+    def test_all_models_use_fog(self):
+        """All indexed models should have use_fog=True."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            diff_dir = Path(tmpdir) / "size2" / "difficulty"
+            diff_dir.mkdir(parents=True)
+            (diff_dir / "beginner.zip").write_bytes(b"fake")
+
+            registry = ModelRegistry(models_dir=str(Path(tmpdir)), boards_dir=str(tmpdir))
+            registry.discover_models()
+
+            for m in registry.get_indexed_models_info():
+                assert m["use_fog"] is True
 
 
 class TestModelRegistryGetModel:
@@ -299,9 +255,9 @@ class TestModelRegistryGetModel:
     def test_get_model_by_id_happy_path(self):
         """Test looking up a model by its stable ID."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "size2" / "stage3"
-            stage3_dir.mkdir(parents=True)
-            (stage3_dir / "model.zip").write_bytes(b"fake")
+            diff_dir = Path(tmpdir) / "size2" / "difficulty"
+            diff_dir.mkdir(parents=True)
+            (diff_dir / "beginner.zip").write_bytes(b"fake")
 
             boards_dir = Path(tmpdir) / "boards"
             size2_boards = boards_dir / "size2"
@@ -314,13 +270,11 @@ class TestModelRegistryGetModel:
             )
             registry.discover_models()
 
-            # Get the model_id from indexed models
             models = registry.get_indexed_models_info()
             assert len(models) > 0
             model_id = models[0]["model_id"]
             assert len(model_id) == 8
 
-            # Verify model_id reverse lookup works
             meta = registry.get_model_meta_by_id(model_id)
             assert meta["board_size"] == 2
             assert meta["model_id"] == model_id
@@ -344,17 +298,15 @@ class TestModelRegistryGetModel:
     def test_indexed_models_have_model_id(self):
         """Test that all indexed models include a model_id field."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            stage3_dir = Path(tmpdir) / "size3" / "stage3"
-            stage3_dir.mkdir(parents=True)
-            (stage3_dir / "model_early.zip").write_bytes(b"fake")
-            (stage3_dir / "model_mid.zip").write_bytes(b"fake")
-            (stage3_dir / "best_model.zip").write_bytes(b"fake")
-
-            boards_dir = Path(tmpdir) / "boards"
+            diff_dir = Path(tmpdir) / "size3" / "difficulty"
+            diff_dir.mkdir(parents=True)
+            (diff_dir / "beginner.zip").write_bytes(b"fake")
+            (diff_dir / "intermediate.zip").write_bytes(b"fake")
+            (diff_dir / "expert.zip").write_bytes(b"fake")
 
             registry = ModelRegistry(
                 models_dir=str(Path(tmpdir)),
-                boards_dir=str(boards_dir),
+                boards_dir=str(tmpdir),
             )
             registry.discover_models()
 
@@ -365,15 +317,14 @@ class TestModelRegistryGetModel:
                 assert "model_id" in m
                 assert len(m["model_id"]) == 8
                 ids.add(m["model_id"])
-            # All IDs should be unique
             assert len(ids) == 3
 
     def test_get_loaded_models_info(self):
         """Test the info endpoint data format."""
         registry, _ = self._make_registry_with_mock_model()
-        registry._model_paths[(2, "early")] = "models/size2/stage3/early.zip"
-        registry._model_paths[(2, "mid")] = "models/size2/stage3/mid.zip"
-        registry._model_paths[(2, "advanced")] = "models/size2/stage3/best.zip"
+        registry._model_paths[(2, "early")] = "inference_server/models/size2/difficulty/beginner.zip"
+        registry._model_paths[(2, "mid")] = "inference_server/models/size2/difficulty/intermediate.zip"
+        registry._model_paths[(2, "advanced")] = "inference_server/models/size2/difficulty/expert.zip"
 
         info = registry.get_loaded_models_info()
         assert "size2" in info
@@ -381,3 +332,9 @@ class TestModelRegistryGetModel:
         assert "early" in checkpoints
         assert "mid" in checkpoints
         assert "advanced" in checkpoints
+
+    def test_get_available_agent_types(self):
+        """All sizes return fog only."""
+        registry, _ = self._make_registry_with_mock_model()
+        assert registry.get_available_agent_types(2) == ["fog"]
+        assert registry.get_available_agent_types(99) == []

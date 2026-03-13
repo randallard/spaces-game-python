@@ -329,12 +329,12 @@ async def construct_board(request: ConstructBoardRequest):
                 ),
             )
 
-        # Get model for skill level and agent type
-        agent_type = request.agent_type.value
-        use_fog = agent_type == "fog"
+        # Get model for skill level (all models are fog now)
+        agent_type = "fog"
+        use_fog = True
         try:
             model, uses_masks, deterministic = registry.get_model(
-                board_size, skill_level, agent_type=agent_type,
+                board_size, skill_level,
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))

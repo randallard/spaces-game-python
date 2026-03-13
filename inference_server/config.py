@@ -6,7 +6,7 @@ All settings are configurable via environment variables.
 
 import os
 
-INFERENCE_MODELS_DIR = os.environ.get('INFERENCE_MODELS_DIR', 'models/')
+INFERENCE_MODELS_DIR = os.environ.get('INFERENCE_MODELS_DIR', 'inference_server/models/')
 INFERENCE_BOARDS_DIR = os.environ.get('INFERENCE_BOARDS_DIR', 'boards/')
 INFERENCE_HOST = os.environ.get('INFERENCE_HOST', '0.0.0.0')
 # Railway sets PORT; fall back to INFERENCE_PORT, then default 8100

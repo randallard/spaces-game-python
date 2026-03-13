@@ -79,7 +79,7 @@ class ConstructBoardRequest(BaseModel):
         description="Rich per-round history from the AI agent's perspective",
     )
     agent_type: AgentType = Field(
-        default=AgentType.standard,
+        default=AgentType.fog,
         description="Agent type: 'standard' (full reveal) or 'fog' (fog of war)",
     )
     model_id: Optional[str] = Field(
