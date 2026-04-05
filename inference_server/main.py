@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from spaces_game.types import Board, BoardMove, Position
 
 from . import config
+from .logging_sink import LoggingSink
 from .scripted_agents import scripted_board
 from .inference import (
     build_board_for_round,
@@ -27,20 +28,23 @@ from .models import (
     AgentType,
     ConstructBoardRequest,
     ConstructBoardResponse,
+    GameResultRequest,
     HealthResponse,
     InfoResponse,
 )
 
 logger = logging.getLogger(__name__)
 
-# Module-level registry, initialized during startup
+# Module-level registry and logging sinks, initialized during startup
 registry: ModelRegistry = None  # type: ignore[assignment]
+_sink: LoggingSink | None = None          # per-round board construction events
+_results_sink: LoggingSink | None = None  # per-game completion events
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load models on startup."""
-    global registry
+    global registry, _sink
     logger.info("Starting inference server...")
     logger.info("Models dir: %s", config.INFERENCE_MODELS_DIR)
     logger.info("Boards dir: %s", config.INFERENCE_BOARDS_DIR)
@@ -63,6 +67,17 @@ async def lifespan(app: FastAPI):
             "will return errors until models are available.",
             config.INFERENCE_MODELS_DIR,
         )
+
+    if config.SUPABASE_URL and config.SUPABASE_ANON_KEY:
+        _sink = LoggingSink(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, config.SUPABASE_LOG_TABLE)
+        _results_sink = LoggingSink(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, config.SUPABASE_GAME_RESULTS_TABLE)
+        logger.info(
+            "Game event logging enabled → tables: %s, %s",
+            config.SUPABASE_LOG_TABLE,
+            config.SUPABASE_GAME_RESULTS_TABLE,
+        )
+    else:
+        logger.info("Game event logging disabled (SUPABASE_URL/SUPABASE_ANON_KEY not set)")
 
     yield
 
@@ -105,6 +120,25 @@ async def info():
 async def list_models():
     """Return a flat indexed list of all available models."""
     return registry.get_indexed_models_info()
+
+
+@app.post("/game-result")
+async def record_game_result(request: GameResultRequest):
+    """Record a completed AI-agent game result for research data collection."""
+    if _results_sink is not None:
+        _results_sink.log({
+            "session_id": request.session_id,
+            "board_size": request.board_size,
+            "skill_level": request.skill_level,
+            "model_id": request.model_id,
+            "player_score": request.player_score,
+            "opponent_score": request.opponent_score,
+            "winner": request.winner,
+            "total_rounds": request.total_rounds,
+            "lot_session_id": request.lot_session_id,
+            "player_id": request.player_id,
+        })
+    return {"ok": True}
 
 
 def _convert_opponent_history_to_grids(
@@ -202,6 +236,24 @@ def _board_to_response_dict(board: Board) -> dict:
     }
 
 
+def _build_log_event(request: ConstructBoardRequest, response: ConstructBoardResponse) -> dict:
+    """Build the Supabase game_events row from a request/response pair."""
+    model_info = response.model_info or {}
+    return {
+        "session_id": request.session_id,
+        "board_size": request.board_size,
+        "round_num": request.round_num,
+        "skill_level": model_info.get("skill_level", request.skill_level.value),
+        "model_id": model_info.get("model_id"),
+        "board_state": response.board,
+        "player_board": request.player_board.model_dump() if request.player_board else None,
+        "opponent_history": [h.model_dump() for h in request.opponent_history],
+        "scores": {"agent": request.agent_score, "opponent": request.opponent_score},
+        "valid": response.valid,
+        "attempts_used": response.attempts_used,
+    }
+
+
 def _build_test_fail_board(board_size: int) -> dict:
     """Build a structurally valid but unplayable board for test_fail skill level.
 
@@ -268,12 +320,15 @@ async def construct_board(request: ConstructBoardRequest):
         )
         valid = is_board_playable(board_obj)
 
-        return ConstructBoardResponse(
+        result = ConstructBoardResponse(
             board=board_dict,
             valid=valid,
             attempts_used=1,
             model_info={"skill_level": scripted_id, "scripted": True},
         )
+        if _sink is not None:
+            _sink.log(_build_log_event(request, result))
+        return result
 
     if request.model_id is not None:
         try:
@@ -427,12 +482,15 @@ async def construct_board(request: ConstructBoardRequest):
         model_info["model_index"] = request.model_index
         model_info["label"] = model_meta["label"]
 
-    return ConstructBoardResponse(
+    result = ConstructBoardResponse(
         board=_board_to_response_dict(board),
         valid=valid,
         attempts_used=attempts_used,
         model_info=model_info,
     )
+    if _sink is not None:
+        _sink.log(_build_log_event(request, result))
+    return result
 
 
 def create_app() -> FastAPI:

@@ -1,0 +1,73 @@
+{
+  "start_time": "2026-03-14T12:48:03.303406",
+  "board_size": 3,
+  "agent_a": "human",
+  "agent_b": "scripted_3",
+  "rounds": [
+    {
+      "round": 1,
+      "winner": "opponent",
+      "a_points": 0,
+      "b_points": 1,
+      "running_a": 0,
+      "running_b": 1,
+      "a_moves": 2,
+      "b_moves": 3,
+      "a_hit_trap": false,
+      "b_hit_trap": false,
+      "collision": true,
+      "a_trap_count": 2,
+      "b_trap_count": 1,
+      "a_path": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "b_path": [
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "a_traps": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "b_traps": [
+        [
+          2,
+          1
+        ]
+      ]
+    }
+  ],
+  "notes": [],
+  "game_notes": ""
+}

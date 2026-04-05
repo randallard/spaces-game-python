@@ -82,6 +82,14 @@ class ConstructBoardRequest(BaseModel):
         default=AgentType.fog,
         description="Agent type: 'standard' (full reveal) or 'fog' (fog of war)",
     )
+    session_id: Optional[str] = Field(
+        None,
+        description="Optional game session ID for research data logging.",
+    )
+    player_board: Optional[OpponentBoardHistory] = Field(
+        None,
+        description="The human player's board for the current round (for research logging).",
+    )
     model_id: Optional[str] = Field(
         None,
         description="Stable model ID (overrides model_index/skill_level/agent_type). See GET /models for available IDs.",
@@ -135,3 +143,17 @@ class InfoResponse(BaseModel):
     """Server info response."""
     loaded_models: dict = Field(default_factory=dict)
     supported_board_sizes: list[int] = Field(default_factory=list)
+
+
+class GameResultRequest(BaseModel):
+    """Summary of a completed AI-agent game, for research data collection."""
+    session_id: str = Field(..., description="Unique game session ID")
+    board_size: int = Field(..., ge=2, le=99)
+    skill_level: str = Field(..., description="AI skill level used")
+    model_id: Optional[str] = Field(None, description="Specific model ID if used")
+    player_score: int = Field(..., ge=0, description="Rounds won by the human player")
+    opponent_score: int = Field(..., ge=0, description="Rounds won by the AI agent")
+    winner: str = Field(..., description="'player', 'opponent', or 'tie'")
+    total_rounds: int = Field(..., ge=0, description="Number of completed rounds")
+    lot_session_id: Optional[str] = Field(None, description="The-lot session ID if this was a the-lot game")
+    player_id: Optional[str] = Field(None, description="Anonymous player ID from local storage (device-scoped)")

@@ -441,10 +441,6 @@ def build_board_interactive(size: Optional[int] = None, start_col: Optional[int]
                 click.echo(click.style('❌ No current position\n', fg='red'))
                 continue
 
-            if state.supermove_active:
-                click.echo(click.style('❌ Cannot finish - must move piece after supermove\n', fg='red'))
-                continue
-
             row = state.current_position.row
             col = state.current_position.col
 

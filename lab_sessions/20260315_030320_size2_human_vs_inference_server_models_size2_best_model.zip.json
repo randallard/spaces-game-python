@@ -1,0 +1,286 @@
+{
+  "start_time": "2026-03-15T03:03:20.411696",
+  "board_size": 2,
+  "agent_a": "human",
+  "agent_b": "inference_server/models/size2/best_model.zip",
+  "rounds": [
+    {
+      "round": 1,
+      "winner": "tie",
+      "a_points": 0,
+      "b_points": 0,
+      "running_a": 0,
+      "running_b": 0,
+      "a_moves": 2,
+      "b_moves": 2,
+      "a_hit_trap": true,
+      "b_hit_trap": true,
+      "collision": false,
+      "a_trap_count": 1,
+      "b_trap_count": 1,
+      "a_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "b_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "a_traps": [
+        [
+          1,
+          1
+        ]
+      ],
+      "b_traps": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "round": 2,
+      "winner": "tie",
+      "a_points": 0,
+      "b_points": 0,
+      "running_a": 0,
+      "running_b": 0,
+      "a_moves": 2,
+      "b_moves": 2,
+      "a_hit_trap": true,
+      "b_hit_trap": true,
+      "collision": false,
+      "a_trap_count": 1,
+      "b_trap_count": 1,
+      "a_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "b_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "a_traps": [
+        [
+          1,
+          1
+        ]
+      ],
+      "b_traps": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "round": 3,
+      "winner": "tie",
+      "a_points": 0,
+      "b_points": 0,
+      "running_a": 0,
+      "running_b": 0,
+      "a_moves": 2,
+      "b_moves": 2,
+      "a_hit_trap": true,
+      "b_hit_trap": true,
+      "collision": false,
+      "a_trap_count": 1,
+      "b_trap_count": 1,
+      "a_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "b_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "a_traps": [
+        [
+          1,
+          1
+        ]
+      ],
+      "b_traps": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "round": 4,
+      "winner": "player",
+      "a_points": 2,
+      "b_points": 0,
+      "running_a": 2,
+      "running_b": 0,
+      "a_moves": 2,
+      "b_moves": 2,
+      "a_hit_trap": false,
+      "b_hit_trap": true,
+      "collision": false,
+      "a_trap_count": 1,
+      "b_trap_count": 1,
+      "a_path": [
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "b_path": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "a_traps": [
+        [
+          1,
+          1
+        ]
+      ],
+      "b_traps": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "round": 5,
+      "winner": "tie",
+      "a_points": 0,
+      "b_points": 0,
+      "running_a": 2,
+      "running_b": 0,
+      "a_moves": 2,
+      "b_moves": 2,
+      "a_hit_trap": false,
+      "b_hit_trap": false,
+      "collision": true,
+      "a_trap_count": 1,
+      "b_trap_count": 1,
+      "a_path": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "b_path": [
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "a_traps": [
+        [
+          0,
+          1
+        ]
+      ],
+      "b_traps": [
+        [
+          1,
+          1
+        ]
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "round": 1,
+      "note": "ok I think I know the way this opponent plays here lets try it out and see what happens if they stick to that column for the next two rounds if we hold here",
+      "timestamp": "2026-03-15T03:06:41.202133"
+    },
+    {
+      "round": 3,
+      "note": "ok yep now let make our move and then the surprize will come maybe in the last round we'll see if we know whats coming, if nothing else we'll find out where that mystery trap is set but I think we're safe to say we know the arrangement of this upcoming board ",
+      "timestamp": "2026-03-15T03:08:43.264545"
+    },
+    {
+      "round": 4,
+      "note": "ok good deal they played standard so our odds here are ... oh hang on the simulater isn't showing their piece as trapped we'll ahve to correct that in the script but lets move on anyway and pretend we didn't see that last weird move, why wouldn't they just go to the goal?  I mean they got trapped and didn't get to make that move anyway but... weird that's not a great strategy - go for the goal once you hit that last column, the risk reward is just not there for anything else",
+      "timestamp": "2026-03-15T03:14:21.514751"
+    },
+    {
+      "round": 5,
+      "note": "interesting - not the same board we saw in the last game very interesting I guess I'm still figureing out these agents' logic but our defensive board paid off it seems like they're still figuring out the super move and not confident with it at this point",
+      "timestamp": "2026-03-15T03:21:07.448248"
+    }
+  ],
+  "game_notes": "yeah making our move in round 4 I think is the right choice, I don't think they're at the point where they'll dssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss - - sorry about that - I was saying they're not thinking ahead so much that they'll make the risky moves earlier on unless wert to"
+}

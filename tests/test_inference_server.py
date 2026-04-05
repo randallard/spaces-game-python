@@ -801,3 +801,156 @@ class TestScriptedModelIdOverride:
         data = response.json()
         assert data["valid"] is True
         assert data["model_info"]["scripted"] is True
+
+
+# ---------------------------------------------------------------------------
+# player_board field in construct-board request
+# ---------------------------------------------------------------------------
+
+class TestPlayerBoardLogging:
+
+    def test_player_board_accepted_in_request(self, client):
+        """player_board field is accepted without error."""
+        response = client.post("/construct-board", json={
+            "board_size": 2,
+            "round_num": 0,
+            "skill_level": "scripted_1",
+            "player_board": {
+                "sequence": [
+                    {"row": 1, "col": 0, "type": "piece", "order": 1},
+                    {"row": 0, "col": 0, "type": "piece", "order": 2},
+                    {"row": -1, "col": 0, "type": "final", "order": 3},
+                ]
+            },
+        })
+        assert response.status_code == 200
+
+    def test_player_board_optional(self, client):
+        """player_board can be omitted without error."""
+        response = client.post("/construct-board", json={
+            "board_size": 2,
+            "round_num": 0,
+            "skill_level": "scripted_1",
+        })
+        assert response.status_code == 200
+
+    def test_session_id_accepted_in_request(self, client):
+        """session_id field is accepted without error."""
+        response = client.post("/construct-board", json={
+            "board_size": 2,
+            "round_num": 0,
+            "skill_level": "scripted_1",
+            "session_id": "game-session-abc123",
+        })
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# /game-result endpoint
+# ---------------------------------------------------------------------------
+
+class TestGameResultEndpoint:
+
+    def test_returns_200_when_no_sink(self, client):
+        """Returns ok even when logging sink is not configured."""
+        import inference_server.main as main_mod
+        original = main_mod._results_sink
+        main_mod._results_sink = None
+        try:
+            response = client.post("/game-result", json={
+                "session_id": "game-123",
+                "board_size": 3,
+                "skill_level": "intermediate",
+                "player_score": 3,
+                "opponent_score": 2,
+                "winner": "player",
+                "total_rounds": 5,
+            })
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
+        finally:
+            main_mod._results_sink = original
+
+    def test_logs_to_sink_when_configured(self, client):
+        """Calls sink.log with the correct payload when sink is active."""
+        from unittest.mock import MagicMock
+        import inference_server.main as main_mod
+
+        mock_sink = MagicMock()
+        original = main_mod._results_sink
+        main_mod._results_sink = mock_sink
+        try:
+            client.post("/game-result", json={
+                "session_id": "game-123",
+                "board_size": 3,
+                "skill_level": "intermediate",
+                "player_score": 3,
+                "opponent_score": 2,
+                "winner": "player",
+                "total_rounds": 5,
+            })
+            mock_sink.log.assert_called_once()
+            logged = mock_sink.log.call_args[0][0]
+            assert logged["session_id"] == "game-123"
+            assert logged["board_size"] == 3
+            assert logged["winner"] == "player"
+            assert logged["total_rounds"] == 5
+        finally:
+            main_mod._results_sink = original
+
+    def test_includes_optional_model_id(self, client):
+        """model_id is included in the logged payload when provided."""
+        from unittest.mock import MagicMock
+        import inference_server.main as main_mod
+
+        mock_sink = MagicMock()
+        original = main_mod._results_sink
+        main_mod._results_sink = mock_sink
+        try:
+            client.post("/game-result", json={
+                "session_id": "game-123",
+                "board_size": 3,
+                "skill_level": "intermediate",
+                "player_score": 3,
+                "opponent_score": 2,
+                "winner": "player",
+                "total_rounds": 5,
+                "model_id": "abc12345",
+            })
+            logged = mock_sink.log.call_args[0][0]
+            assert logged["model_id"] == "abc12345"
+        finally:
+            main_mod._results_sink = original
+
+    def test_includes_lot_session_id(self, client):
+        """lot_session_id is included when provided."""
+        from unittest.mock import MagicMock
+        import inference_server.main as main_mod
+
+        mock_sink = MagicMock()
+        original = main_mod._results_sink
+        main_mod._results_sink = mock_sink
+        try:
+            client.post("/game-result", json={
+                "session_id": "game-123",
+                "board_size": 3,
+                "skill_level": "intermediate",
+                "player_score": 3,
+                "opponent_score": 2,
+                "winner": "player",
+                "total_rounds": 5,
+                "lot_session_id": "lot-session-xyz",
+            })
+            logged = mock_sink.log.call_args[0][0]
+            assert logged["lot_session_id"] == "lot-session-xyz"
+        finally:
+            main_mod._results_sink = original
+
+    def test_missing_required_field_returns_422(self, client):
+        """Missing required fields return 422 Unprocessable Entity."""
+        response = client.post("/game-result", json={
+            "board_size": 3,
+            "skill_level": "intermediate",
+            # missing session_id, player_score, opponent_score, winner, total_rounds
+        })
+        assert response.status_code == 422
