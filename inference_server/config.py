@@ -14,9 +14,3 @@ INFERENCE_PORT = int(os.environ.get('PORT', os.environ.get('INFERENCE_PORT', '81
 INFERENCE_CORS_ORIGINS = os.environ.get(
     'INFERENCE_CORS_ORIGINS', 'http://localhost:5173'
 ).split(',')
-
-# Supabase logging (optional — logging is disabled if these are not set)
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
-SUPABASE_LOG_TABLE = os.environ.get('SUPABASE_LOG_TABLE', 'game_events')
-SUPABASE_GAME_RESULTS_TABLE = os.environ.get('SUPABASE_GAME_RESULTS_TABLE', 'game_results')
